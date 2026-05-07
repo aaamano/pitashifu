@@ -114,6 +114,78 @@ export default function StoreSettings() {
         </div>
       </div>
 
+      {/* Break time rules */}
+      <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <div>
+            <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>休憩時間設定</h2>
+            <p style={{ fontSize:11, color:'#64748b', marginTop:3, marginBottom:0 }}>勤務時間に応じた休憩時間を設定します</p>
+          </div>
+          <button
+            onClick={() => setConfig(p => ({ ...p, breakRules: [{ minWorkHours: 6, breakMinutes: 45 }, ...(p.breakRules || [])] }))}
+            className="mgr-btn-primary" style={{ padding:'6px 14px', fontSize:12 }}>
+            + ルール追加
+          </button>
+        </div>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+          <thead>
+            <tr style={{ borderBottom:'2px solid #e2e8f0' }}>
+              <th style={{ textAlign:'left', padding:'8px 12px', fontWeight:600, color:'#475569', fontSize:12 }}>勤務時間（以上）</th>
+              <th style={{ textAlign:'left', padding:'8px 12px', fontWeight:600, color:'#475569', fontSize:12 }}>休憩時間</th>
+              <th style={{ width:60 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {(config.breakRules || []).map((rule, idx) => (
+              <tr key={idx} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                <td style={{ padding:'8px 12px' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <input
+                      type="number" min={1} max={24} step={0.5}
+                      value={rule.minWorkHours}
+                      onChange={e => setConfig(p => ({
+                        ...p,
+                        breakRules: p.breakRules.map((r, i) => i === idx ? { ...r, minWorkHours: Number(e.target.value) } : r)
+                          .sort((a, b) => b.minWorkHours - a.minWorkHours),
+                      }))}
+                      className="mgr-input" style={{ width:80, fontSize:13 }} />
+                    <span style={{ color:'#64748b', fontSize:12 }}>時間以上</span>
+                  </div>
+                </td>
+                <td style={{ padding:'8px 12px' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <select
+                      value={rule.breakMinutes}
+                      onChange={e => setConfig(p => ({
+                        ...p,
+                        breakRules: p.breakRules.map((r, i) => i === idx ? { ...r, breakMinutes: Number(e.target.value) } : r),
+                      }))}
+                      className="mgr-input" style={{ width:100, fontSize:13 }}>
+                      {[15, 30, 45, 60, 75, 90].map(m => <option key={m} value={m}>{m}分</option>)}
+                    </select>
+                  </div>
+                </td>
+                <td style={{ padding:'8px 12px', textAlign:'center' }}>
+                  <button
+                    onClick={() => setConfig(p => ({ ...p, breakRules: p.breakRules.filter((_, i) => i !== idx) }))}
+                    style={{ color:'#ef4444', background:'none', border:'none', cursor:'pointer', fontSize:16, fontWeight:700 }}>×</button>
+                </td>
+              </tr>
+            ))}
+            {(!config.breakRules || config.breakRules.length === 0) && (
+              <tr>
+                <td colSpan={3} style={{ padding:'20px 12px', textAlign:'center', color:'#94a3b8', fontSize:12 }}>
+                  ルールが設定されていません
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <p style={{ fontSize:11, color:'#94a3b8', marginTop:10, marginBottom:0 }}>
+          ※ 複数ルールがある場合、勤務時間に合致する最初のルール（時間が長いもの優先）が適用されます
+        </p>
+      </div>
+
       {/* Special tasks */}
       <div className="mgr-card" style={{ padding:24 }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
