@@ -291,6 +291,34 @@ export const shiftSubmissions = [
   },
 ]
 
+// ─── シフトバージョン一覧（/manager/shift トップ）─────────────────────────────
+export const shiftVersions = [
+  {
+    id: 'v1',
+    name: 'ver1',
+    status: 'confirmed', // 'draft' | 'confirmed'
+    createdAt: '2026-04-01 10:30',
+    updatedAt: '2026-04-03 18:22',
+    author: '金子 光男',
+  },
+  {
+    id: 'v2',
+    name: 'ver2 (試案A)',
+    status: 'draft',
+    createdAt: '2026-04-04 09:15',
+    updatedAt: '2026-04-05 14:08',
+    author: '金子 光男',
+  },
+  {
+    id: 'v3',
+    name: 'ver3 (週末強化案)',
+    status: 'draft',
+    createdAt: '2026-04-05 11:42',
+    updatedAt: '2026-04-05 11:42',
+    author: '澤井 詩議',
+  },
+]
+
 export const managerNotifications = [
   { id: 1, type: 'submit',  text: '金子 光男 さんからシフト提出がありました',              sub: '2026年5月 前半',    time: '5分前',        read: false },
   { id: 2, type: 'alert',   text: 'シフト確定前日です。シフト確定がまだ完了していません。', sub: '4月前半シフト',     time: '1時間前',      read: false },

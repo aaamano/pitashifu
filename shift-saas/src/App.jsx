@@ -4,6 +4,7 @@ import ManagerLayout from './components/ManagerLayout'
 import EmployeeLayout from './components/EmployeeLayout'
 import Dashboard from './pages/manager/Dashboard'
 import Targets from './pages/manager/Targets'
+import ShiftList from './pages/manager/ShiftList'
 import ShiftDecision from './pages/manager/ShiftDecision'
 import Members from './pages/manager/Members'
 import MemberDetail from './pages/manager/MemberDetail'
@@ -25,7 +26,8 @@ export default function App() {
         <Route path="/manager" element={<ManagerLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="targets" element={<Targets />} />
-          <Route path="shift" element={<ShiftDecision />} />
+          <Route path="shift" element={<ShiftList />} />
+          <Route path="shift/:versionId" element={<ShiftDecision />} />
           <Route path="members" element={<Members />} />
           <Route path="members/:id" element={<MemberDetail />} />
           <Route path="settings" element={<StoreSettings />} />

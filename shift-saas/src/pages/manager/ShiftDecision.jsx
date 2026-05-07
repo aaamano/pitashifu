@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   staff, daysConfig, shiftData, assignedShifts, YEAR_MONTH,
   storeConfig, staffConstraints, dailyTargets, ORDER_DISTRIBUTION,
   generateSlots, parseShiftTimes, calcRequiredStaff, skillLabels,
   decomposeShiftHours, calcDailyPay, SALES_PATTERNS, dayPatterns as initialDayPatterns,
+  shiftVersions,
 } from '../../data/mockData'
 
 const AI_STAGES = [
@@ -85,6 +87,9 @@ const SUMM = [
 ]
 
 export default function ShiftDecision() {
+  const { versionId } = useParams()
+  const navigate = useNavigate()
+  const currentVersion = shiftVersions.find(v => v.id === versionId) || { id: versionId, name: versionId || 'ver1', status: 'draft', author: '金子 光男' }
   const [selectedDay,  setSelectedDay]  = useState(1)
   const [assigned,     setAssigned]     = useState(assignedShifts)
   const [specialTasks, setSpecialTasks] = useState(storeConfig.specialTasks)
@@ -98,7 +103,7 @@ export default function ShiftDecision() {
   const [dayPatternMap,    setDayPatternMap]    = useState(initialDayPatterns) // day -> pattern key
   const [half,             setHalf]             = useState('first') // 'first' | 'second'
   const visibleDays = daysConfig.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
-  const [shiftStatus,      setShiftStatus]      = useState('draft')   // 'draft' | 'confirmed'
+  const [shiftStatus,      setShiftStatus]      = useState(currentVersion.status)   // 'draft' | 'confirmed'
   const [saveFlash,     setSaveFlash]    = useState('')          // 'saved' | 'confirmed' | ''
   const [showPublish,   setShowPublish]  = useState(false)
   const [publishEndDay, setPublishEndDay] = useState(15)
@@ -242,9 +247,21 @@ export default function ShiftDecision() {
       {/* ── Header ── */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10, flexShrink:0 }}>
         <div>
-          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{YEAR_MONTH} 前半</div>
+          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
+            <button
+              onClick={() => navigate('/manager/shift')}
+              style={{ background:'none', border:'none', color:'#6366f1', fontSize:11, fontWeight:600, cursor:'pointer', padding:0, fontFamily:'inherit' }}
+            >
+              ← バージョン一覧
+            </button>
+            <span style={{ color:'#cbd5e1' }}>/</span>
+            <span>{YEAR_MONTH} 前半</span>
+          </div>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', margin:0, letterSpacing:'-0.01em' }}>シフト決定 — 時間帯人員配置</h1>
+            <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', margin:0, letterSpacing:'-0.01em' }}>
+              シフト決定 — 時間帯人員配置
+              <span style={{ fontSize:14, fontWeight:600, color:'#6366f1', marginLeft:10 }}>「{currentVersion.name}」</span>
+            </h1>
             <span style={{
               fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:10, whiteSpace:'nowrap',
               background: shiftStatus === 'confirmed' ? '#d1fae5' : '#f1f5f9',
