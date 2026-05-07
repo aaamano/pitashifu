@@ -17,11 +17,12 @@ function parseCode(code) {
 }
 
 const STATUS_LABEL = { draft: '下書き', submitted: '提出済み', confirmed: '確定済み' }
-const STATUS_STYLE = {
-  draft:     'bg-amber-100 text-amber-800',
-  submitted: 'bg-blue-100 text-blue-800',
-  confirmed: 'bg-emerald-100 text-emerald-800',
+const STATUS_BADGE = {
+  draft:     { background:'#fef3c7', color:'#92400e' },
+  submitted: { background:'#eef0fe', color:'#3730a3' },
+  confirmed: { background:'#d1fae5', color:'#065f46' },
 }
+const badgeStyle = (status) => ({ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:10, whiteSpace:'nowrap', ...STATUS_BADGE[status] })
 
 export default function ShiftSubmit({ base = '/employee', sukima = false }) {
   const [submissions, setSubmissions] = useState(initialSubmissions)
@@ -91,12 +92,12 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
   if (mode === 'edit' && active.status === 'confirmed') return (
     <>
       <div className="pita-phone-header">
-        <button onClick={() => setMode('list')} style={{ fontSize:12, color:'var(--pita-accent)', background:'none', border:'none', cursor:'pointer', padding:'0 4px', fontWeight:600 }}>← 戻る</button>
+        <button onClick={() => setMode('list')} style={{ fontSize:12, color:'#5B67F8', background:'none', border:'none', cursor:'pointer', padding:'0 4px', fontWeight:600 }}>← 戻る</button>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:700, color:'var(--pita-text)' }}>{active.period}</div>
           <div style={{ fontSize:9, color:'var(--pita-muted)' }}>シフト確認（編集不可）</div>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_STYLE[active.status]}`}>{STATUS_LABEL[active.status]}</span>
+        <span style={badgeStyle(active.status)}>{STATUS_LABEL[active.status]}</span>
       </div>
       <div className="pita-mode-bar">
         <span className="pita-mode-chip" style={{ background:'#dcfce7', color:'#14532d' }}>確定済み</span>
@@ -130,12 +131,12 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
   if (mode === 'edit') return (
     <>
       <div className="pita-phone-header">
-        <button onClick={() => setMode('list')} style={{ fontSize:12, color:'var(--pita-accent)', background:'none', border:'none', cursor:'pointer', padding:'0 4px', fontWeight:600 }}>← 戻る</button>
+        <button onClick={() => setMode('list')} style={{ fontSize:12, color:'#5B67F8', background:'none', border:'none', cursor:'pointer', padding:'0 4px', fontWeight:600 }}>← 戻る</button>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:700, color:'var(--pita-text)' }}>{active.period}</div>
           <div style={{ fontSize:9, color:'var(--pita-muted)' }}>シフト提出</div>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_STYLE[active.status]}`}>{STATUS_LABEL[active.status]}</span>
+        <span style={badgeStyle(active.status)}>{STATUS_LABEL[active.status]}</span>
       </div>
       <div className="pita-mode-bar">
         <span className="pita-mode-chip editing">編集中</span>
@@ -166,10 +167,10 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
           </table>
         </div>
       </div>
-      <div style={{ padding:'8px 12px', borderTop:'1px solid var(--pita-border)', display:'flex', gap:8, background:'var(--pita-panel)', flexShrink:0 }}>
-        <button onClick={saveDraft} style={{ flex:1, padding:'8px 0', borderRadius:8, border:'1px solid var(--pita-border)', background:'var(--pita-panel)', color:'var(--pita-text)', fontSize:12, fontWeight:600, cursor:'pointer' }}>下書き保存</button>
+      <div style={{ padding:'8px 12px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8, background:'white', flexShrink:0 }}>
+        <button onClick={saveDraft} style={{ flex:1, padding:'8px 0', borderRadius:8, border:'1px solid #e5e7eb', background:'white', color:'#374151', fontSize:12, fontWeight:600, cursor:'pointer' }}>下書き保存</button>
         {active.status !== 'confirmed' && (
-          <button onClick={submitShift} style={{ flex:1, padding:'8px 0', borderRadius:8, border:'none', background:'var(--pita-accent)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer' }}>提出する</button>
+          <button onClick={submitShift} style={{ flex:1, padding:'8px 0', borderRadius:8, border:'none', background:'#5B67F8', color:'white', fontSize:12, fontWeight:600, cursor:'pointer' }}>提出する</button>
         )}
       </div>
       <EmployeeTabBar base={base} active="submit" sukima={sukima} />
@@ -179,12 +180,12 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
   return (
     <>
       <div className="pita-phone-header">
-        <div style={{ width:32, height:32, borderRadius:'50%', background:'var(--pita-accent)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{ME.name[0]}</div>
+        <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{ME.name[0]}</div>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:14, fontWeight:700, color:'var(--pita-text)' }}>シフト提出</div>
           <div style={{ fontSize:10, color:'var(--pita-muted)', marginTop:1 }}>{YEAR_MONTH}</div>
         </div>
-        <button onClick={openNew} className="pita-btn accent" style={{ fontSize:10, height:24 }}>+ 新規作成</button>
+        <button onClick={openNew} style={{ fontSize:11, height:28, padding:'0 12px', borderRadius:14, border:'none', background:'#5B67F8', color:'white', fontWeight:600, cursor:'pointer' }}>+ 新規作成</button>
       </div>
       <div className="pita-phone-body">
         <div style={{ padding:'8px 0' }}>
@@ -195,13 +196,13 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
             <div key={sub.id} style={{ margin:'0 10px 8px', padding:'10px 12px', background:'var(--pita-panel)', border:'1px solid var(--pita-border)', borderRadius:10 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
                 <span style={{ fontSize:12, fontWeight:700, color:'var(--pita-text)' }}>{sub.period}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_STYLE[sub.status]}`}>{STATUS_LABEL[sub.status]}</span>
+                <span style={badgeStyle(sub.status)}>{STATUS_LABEL[sub.status]}</span>
               </div>
               <div style={{ fontSize:10, color:'var(--pita-muted)', marginBottom:8 }}>
                 <div>提出: {sub.submittedAt || '—'}</div>
                 <div>最終編集: {sub.lastEditedAt || '—'}</div>
               </div>
-              <button onClick={() => openEdit(sub)} style={{ width:'100%', padding:'6px 0', borderRadius:6, border:'1px solid var(--pita-border)', background:'var(--pita-bg-subtle)', color:'var(--pita-text)', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={() => openEdit(sub)} style={{ width:'100%', padding:'6px 0', borderRadius:6, border:'1px solid #e5e7eb', background:'#f9fafb', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                 {sub.status === 'confirmed' ? '確認する' : '編集する'}
               </button>
             </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { storeConfig as initialConfig, YEAR_MONTH } from '../../data/mockData'
+import { storeConfig as initialConfig, YEAR_MONTH, skillLabels as initialSkillLabels } from '../../data/mockData'
 
 // Hardcoded color lookup (avoids Tailwind purge issues with dynamic strings)
 const TASK_COLORS = {
@@ -22,10 +22,22 @@ const MINS  = ['00', '15', '30', '45']
 export { TASK_COLORS }
 
 export default function StoreSettings() {
-  const [config, setConfig] = useState(initialConfig)
-  const [saved, setSaved] = useState(false)
-  const [editTask, setEditTask] = useState(null)
-  const [taskForm, setTaskForm] = useState(null)
+  const [config,    setConfig]    = useState(initialConfig)
+  const [saved,     setSaved]     = useState(false)
+  const [editTask,  setEditTask]  = useState(null)
+  const [taskForm,  setTaskForm]  = useState(null)
+  const [skills,    setSkills]    = useState(Object.entries(initialSkillLabels).map(([key, label]) => ({ key, label })))
+  const [newSkill,  setNewSkill]  = useState({ key: '', label: '' })
+  const [editSkill, setEditSkill] = useState(null)  // index being edited
+
+  const addSkill = () => {
+    if (!newSkill.key.trim() || !newSkill.label.trim()) return
+    if (skills.some(s => s.key === newSkill.key.trim())) return
+    setSkills(prev => [...prev, { key: newSkill.key.trim().toLowerCase().replace(/\s+/g,'_'), label: newSkill.label.trim() }])
+    setNewSkill({ key: '', label: '' })
+  }
+  const removeSkill = (idx) => setSkills(prev => prev.filter((_, i) => i !== idx))
+  const updateSkill = (idx, field, val) => setSkills(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s))
 
   const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
 
@@ -234,6 +246,43 @@ export default function StoreSettings() {
       </div>
 
       {/* Modal */}
+      {/* ── Skill management ── */}
+      <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>スキル設定</h2>
+          <span style={{ fontSize:11, color:'#94a3b8' }}>メンバーに設定できるスキルを管理します</span>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
+          {skills.map((s, idx) => (
+            <div key={s.key} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'#f8fafc', borderRadius:8, border:'1px solid #e2e8f0' }}>
+              {editSkill === idx ? (
+                <>
+                  <input value={s.key} onChange={e => updateSkill(idx,'key',e.target.value)} placeholder="キー(英数字)" className="mgr-input" style={{ width:140, padding:'5px 8px', fontSize:12 }} />
+                  <input value={s.label} onChange={e => updateSkill(idx,'label',e.target.value)} placeholder="表示名" className="mgr-input" style={{ width:140, padding:'5px 8px', fontSize:12 }} />
+                  <button onClick={() => setEditSkill(null)} className="mgr-btn-primary" style={{ padding:'5px 12px', fontSize:12 }}>確定</button>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize:11, color:'#94a3b8', fontFamily:'monospace', minWidth:80 }}>{s.key}</span>
+                  <span style={{ fontSize:13, fontWeight:600, color:'#0f172a', flex:1 }}>{s.label}</span>
+                  <button onClick={() => setEditSkill(idx)} className="mgr-btn-secondary" style={{ padding:'4px 10px', fontSize:11 }}>編集</button>
+                  <button onClick={() => removeSkill(idx)} style={{ padding:'4px 10px', borderRadius:6, border:'1px solid #fca5a5', background:'#fff1f2', color:'#dc2626', fontSize:11, cursor:'pointer', fontFamily:'inherit', fontWeight:600 }}>削除</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'flex-end' }}>
+          <div style={{ flex:1 }}><label className="mgr-label">スキルキー (英数字)</label>
+            <input value={newSkill.key} onChange={e => setNewSkill(p=>({...p,key:e.target.value}))} placeholder="例: kitchen" className="mgr-input" style={{ fontSize:12 }} />
+          </div>
+          <div style={{ flex:1 }}><label className="mgr-label">表示名</label>
+            <input value={newSkill.label} onChange={e => setNewSkill(p=>({...p,label:e.target.value}))} placeholder="例: キッチン" className="mgr-input" style={{ fontSize:12 }} onKeyDown={e => e.key==='Enter' && addSkill()} />
+          </div>
+          <button onClick={addSkill} className="mgr-btn-primary" style={{ padding:'8px 18px', whiteSpace:'nowrap' }}>＋ 追加</button>
+        </div>
+      </div>
+
       {editTask && taskForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">

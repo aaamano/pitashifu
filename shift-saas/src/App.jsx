@@ -9,6 +9,7 @@ import Members from './pages/manager/Members'
 import MemberDetail from './pages/manager/MemberDetail'
 import StoreSettings from './pages/manager/StoreSettings'
 import ManagerNotifications from './pages/manager/Notifications'
+import Payroll from './pages/manager/Payroll'
 import Schedule from './pages/employee/Schedule'
 import ShiftSubmit from './pages/employee/ShiftSubmit'
 import EmployeeNotifications from './pages/employee/Notifications'
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="members" element={<Members />} />
           <Route path="members/:id" element={<MemberDetail />} />
           <Route path="settings" element={<StoreSettings />} />
+          <Route path="payroll" element={<Payroll />} />
           <Route path="notifications" element={<ManagerNotifications />} />
         </Route>
 

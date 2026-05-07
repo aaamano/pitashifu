@@ -190,8 +190,8 @@ export default function SukimaTop() {
 
       {showCondition && (
         <>
-          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:50 }} onClick={() => setShowCondition(false)} />
-          <div style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:430, background:'white', borderRadius:'16px 16px 0 0', zIndex:51, padding:'20px 16px 28px' }}>
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:50, touchAction:'none' }} onClick={() => setShowCondition(false)} />
+          <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'white', borderRadius:'16px 16px 0 0', zIndex:51, padding:'20px 16px 28px' }}>
             <div style={{ display:'flex', alignItems:'center', marginBottom:18 }}>
               <div style={{ fontSize:15, fontWeight:700, color:'#1f2937' }}>条件登録</div>
               <div style={{ flex:1 }} />

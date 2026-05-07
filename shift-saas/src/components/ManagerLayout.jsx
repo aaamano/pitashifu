@@ -7,6 +7,7 @@ const NAV = [
   { to: '/manager/targets',       label: '目標計画',       icon: '◎', end: false },
   { to: '/manager/shift',         label: 'シフト決定',     icon: '▦', end: false },
   { to: '/manager/members',       label: 'メンバー管理',   icon: '◉', end: false },
+  { to: '/manager/payroll',       label: '月次振込予定',   icon: '¥', end: false },
   { to: '/manager/settings',      label: '店舗設定',       icon: '◌', end: false },
   { to: '/manager/notifications', label: '通知',           icon: '◍', end: false, badge: true },
 ]

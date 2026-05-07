@@ -38,7 +38,7 @@ const retentionCls = (p) => {
   return 'bg-gray-100 text-gray-500 border border-gray-200'
 }
 
-const BLANK_MEMBER     = { id: null, name: '', type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7, wage: 1050 }
+const BLANK_MEMBER     = { id: null, name: '', type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7, wage: 1050, transitPerDay: 0 }
 const BLANK_CONSTRAINT = { incompatible: [], targetEarnings: 0, retentionPriority: 5 }
 
 const MODAL_TABS = ['基本情報', 'マネージャー設定']
@@ -164,6 +164,7 @@ export default function Members() {
                 <th className="meta-col">種別</th>
                 <th style={{ textAlign: 'left', background: '#e2e8f0', fontSize: 12.5, color: '#1e293b', fontWeight: 700, padding: '8px 12px' }}>スキル</th>
                 <th className="meta-col">時給</th>
+                <th className="meta-col">交通費/日</th>
                 <th className="meta-col">優先</th>
                 {daysConfig.map(d => (
                   <th
@@ -231,6 +232,11 @@ export default function Members() {
                     {/* Wage */}
                     <td className="meta-col">
                       ¥{m.wage.toLocaleString()}
+                    </td>
+
+                    {/* Transit per day */}
+                    <td className="meta-col">
+                      ¥{(m.transitPerDay ?? 0).toLocaleString()}
                     </td>
 
                     {/* Retention priority */}
@@ -336,7 +342,7 @@ export default function Members() {
                       ))}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">時間生産性（件/時間）</label>
                       <input type="number" value={form.hourlyOrders} onChange={e => setForm(p => ({ ...p, hourlyOrders: Number(e.target.value) }))}
@@ -345,6 +351,11 @@ export default function Members() {
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">時給（円）</label>
                       <input type="number" value={form.wage} onChange={e => setForm(p => ({ ...p, wage: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">交通費（円/日）</label>
+                      <input type="number" value={form.transitPerDay ?? 0} onChange={e => setForm(p => ({ ...p, transitPerDay: Number(e.target.value) }))}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
                     </div>
                   </div>

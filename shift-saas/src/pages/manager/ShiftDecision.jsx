@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import {
   staff, daysConfig, shiftData, assignedShifts, YEAR_MONTH,
   storeConfig, staffConstraints, dailyTargets, ORDER_DISTRIBUTION,
-  generateSlots, parseShiftTimes, calcRequiredStaff,
+  generateSlots, parseShiftTimes, calcRequiredStaff, skillLabels,
+  decomposeShiftHours, calcDailyPay, SALES_PATTERNS, dayPatterns as initialDayPatterns,
 } from '../../data/mockData'
 
 const AI_STAGES = [
@@ -66,22 +67,56 @@ const SW = 64    // sub-label (top) = start+end cols (bottom)
 const STW = 32   // start col
 const ETW = 32   // end col
 const SUMM = [
-  { k: 'work',  l: '勤務',   w: 38 },
-  { k: 'labor', l: '労働',   w: 38 },
-  { k: 'night', l: '深夜',   w: 38 },
-  { k: 'pay',   l: '給与',   w: 68 },
-  { k: 'trans', l: '交通費', w: 54 },
+  { k: 'work',       l: '勤務',   w: 38 },
+  { k: 'labor',      l: '労働',   w: 38 },
+  { k: 'overtime',   l: '超勤',   w: 38 },
+  { k: 'lateNight',  l: '深夜',   w: 38 },
+  { k: 'otLateNight',l: '残深',   w: 38 },
+  { k: 'pay',        l: '給与',   w: 72 },
+  { k: 'trans',      l: '交通費', w: 60 },
 ]
 
 export default function ShiftDecision() {
   const [selectedDay,  setSelectedDay]  = useState(1)
   const [assigned,     setAssigned]     = useState(assignedShifts)
   const [specialTasks, setSpecialTasks] = useState(storeConfig.specialTasks)
-  const [showAI,   setShowAI]   = useState(false)
-  const [aiPhase,  setAIPhase]  = useState('select')
-  const [aiStage,  setAIStage]  = useState(0)
-  const [aiDays,   setAIDays]   = useState(() => new Set(daysConfig.map(d => d.day)))
-  const [aiResult, setAIResult] = useState(null)
+  const [showAI,        setShowAI]       = useState(false)
+  const [aiPhase,       setAIPhase]      = useState('select')
+  const [aiStage,       setAIStage]      = useState(0)
+  const [aiDays,        setAIDays]       = useState(() => new Set(daysConfig.map(d => d.day)))
+  const [aiResult,      setAIResult]     = useState(null)
+  const [dayTaskOverrides, setDayTaskOverrides] = useState({})  // { [day]: { [taskId]: Partial<Task> } }
+  const [editDayTask,      setEditDayTask]      = useState(null) // taskId being edited for the day
+  const [dayPatternMap,    setDayPatternMap]    = useState(initialDayPatterns) // day -> pattern key
+  const [half,             setHalf]             = useState('first') // 'first' | 'second'
+  const visibleDays = daysConfig.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
+  const [shiftStatus,      setShiftStatus]      = useState('draft')   // 'draft' | 'confirmed'
+  const [saveFlash,     setSaveFlash]    = useState('')          // 'saved' | 'confirmed' | ''
+  const [showPublish,   setShowPublish]  = useState(false)
+  const [publishEndDay, setPublishEndDay] = useState(15)
+  const [published,     setPublished]    = useState(false)
+
+  const handleSaveDraft = () => {
+    setShiftStatus('draft')
+    setSaveFlash('saved')
+    setTimeout(() => setSaveFlash(''), 2000)
+  }
+  const handleConfirm = () => {
+    setShiftStatus('confirmed')
+    setSaveFlash('confirmed')
+    setTimeout(() => setSaveFlash(''), 2000)
+  }
+  const handlePublish = () => {
+    setPublished(true)
+    setShowPublish(false)
+  }
+
+  const getEffectiveTasks = (day) => specialTasks.map(t => ({ ...t, ...(dayTaskOverrides[day]?.[t.id] || {}) }))
+  const setDayOverride = (day, taskId, patch) =>
+    setDayTaskOverrides(prev => ({
+      ...prev,
+      [day]: { ...(prev[day] || {}), [taskId]: { ...(prev[day]?.[taskId] || {}), ...patch } },
+    }))
 
   const slots = useMemo(
     () => generateSlots(15, storeConfig.openHour, storeConfig.closeHour),
@@ -93,9 +128,10 @@ export default function ShiftDecision() {
   const dayTarget   = dailyTargets.find(t => t.day === selectedDay)
   const dailyOrders = dayTarget?.orders ?? 200
 
+  const effectiveTasks = getEffectiveTasks(selectedDay)
   const getRequired = (slot) => {
     const [h, m] = slot.split(':').map(Number)
-    const extra = getTasksForSlotMin(h * 60 + m, specialTasks).reduce((s, t) => s + t.requiredStaff, 0)
+    const extra = getTasksForSlotMin(h * 60 + m, effectiveTasks).reduce((s, t) => s + t.requiredStaff, 0)
     return calcRequiredStaff(dailyOrders, h, storeConfig.avgProductivity, extra)
   }
   const getAssignedList = (slot) => assigned[selectedDay]?.[slot] || []
@@ -118,25 +154,32 @@ export default function ShiftDecision() {
     })
   }
 
+  const currentPatternKey = dayPatternMap[selectedDay] || 'weekday1'
+  const currentPattern    = SALES_PATTERNS[currentPatternKey]
+
   const slotSalesKen = (slot) => {
     const [h] = slot.split(':').map(Number)
+    // Use pattern's hourly amount (in 円) → 千円
+    const amt = currentPattern?.hourlySales[h]
+    if (amt != null) return Math.round(amt / 1000)
     return Math.round((dayTarget?.sales ?? 0) * (ORDER_DISTRIBUTION[h] ?? 0))
   }
   const cumSales = useMemo(() => {
     let cum = 0
     return slots.map(s => { cum += slotSalesKen(s); return cum })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, selectedDay])
+  }, [slots, selectedDay, currentPatternKey])
 
   const getShiftSummary = (staffId) => {
     const code = shiftData[staffId]?.[selectedDay - 1] || 'X'
     const t = parseShiftTimes(code)
     if (!t) return null
-    const work  = t.end - t.start
-    const labor = Math.max(0, work - (work >= 6 ? 1 : 0))
-    const night = Math.max(0, Math.min(t.end, 24) - Math.max(t.start, 22))
     const member = staff.find(s => s.id === staffId)
-    return { start: t.start, end: t.end, work, labor, night, pay: Math.round(labor * (member?.wage ?? 1050)) }
+    const wage   = member?.wage ?? 1050
+    const trans  = member?.transitPerDay ?? 0
+    const { work, labor, overtime, lateNight, otLateNight } = decomposeShiftHours(t.start, t.end)
+    const pay = calcDailyPay(wage, labor, overtime, lateNight, otLateNight)
+    return { start: t.start, end: t.end, work, labor, overtime, lateNight, otLateNight, pay: Math.round(pay), trans }
   }
 
   const reqColor = (cnt, req) => {
@@ -184,20 +227,42 @@ export default function ShiftDecision() {
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10, flexShrink:0 }}>
         <div>
           <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{YEAR_MONTH} 前半</div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', margin:0, letterSpacing:'-0.01em' }}>シフト決定 — 時間帯人員配置</h1>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', margin:0, letterSpacing:'-0.01em' }}>シフト決定 — 時間帯人員配置</h1>
+            <span style={{
+              fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:10, whiteSpace:'nowrap',
+              background: shiftStatus === 'confirmed' ? '#d1fae5' : '#f1f5f9',
+              color:      shiftStatus === 'confirmed' ? '#065f46' : '#64748b',
+            }}>
+              {saveFlash === 'saved' ? '✓ 保存しました' : saveFlash === 'confirmed' ? '✓ 確定しました' : shiftStatus === 'confirmed' ? '確定済み' : '下書き'}
+            </span>
+            {published && <span style={{ fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:10, background:'#dbeafe', color:'#1d4ed8' }}>📢 展開済み</span>}
+          </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={openAI} style={{
-            display:'flex', alignItems:'center', gap:6, border:'none', borderRadius:8,
-            padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer', color:'white',
-            background:'#4f46e5', fontFamily:'inherit',
-          }}>✨ AI自動配置</button>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <button onClick={handleSaveDraft} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>下書き保存</button>
+          <button onClick={handleConfirm} style={{ padding:'8px 14px', borderRadius:8, border:'none', background:'#10b981', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>シフト確定</button>
+          <button onClick={() => setShowPublish(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', borderRadius:8, border:'none', background:'#f59e0b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>📢 シフト展開</button>
+          <button onClick={openAI} style={{ display:'flex', alignItems:'center', gap:6, border:'none', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', color:'white', background:'#4f46e5', fontFamily:'inherit' }}>✨ AI自動配置</button>
         </div>
+      </div>
+
+      {/* ── Half toggle ── */}
+      <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
+        <span style={{ fontSize:12, color:'#64748b' }}>期間:</span>
+        {[{ k:'first', l:'前半 (1〜15日)' }, { k:'second', l:'後半 (16〜30日)' }].map(o => (
+          <button key={o.k} onClick={() => { setHalf(o.k); setSelectedDay(o.k === 'first' ? 1 : 16) }} style={{
+            padding:'5px 14px', borderRadius:18, fontSize:12, fontWeight: half === o.k ? 700 : 500,
+            background: half === o.k ? '#4f46e5' : '#f0f5f9',
+            color:      half === o.k ? 'white'   : '#475569',
+            border:'none', cursor:'pointer', fontFamily:'inherit',
+          }}>{o.l}</button>
+        ))}
       </div>
 
       {/* ── Day selector ── */}
       <div style={{ display:'flex', gap:4, overflowX:'auto', paddingBottom:2, flexShrink:0 }}>
-        {daysConfig.map(d => (
+        {visibleDays.map(d => (
           <button key={d.day} onClick={() => setSelectedDay(d.day)} style={{
             flexShrink:0, width:44, padding:'5px 0', borderRadius:7, border:'none', cursor:'pointer',
             fontSize:11, fontWeight:600, fontFamily:'inherit',
@@ -209,20 +274,70 @@ export default function ShiftDecision() {
         ))}
       </div>
 
-      {/* ── Special task toggles ── */}
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', flexShrink:0 }}>
-        <span style={{ fontSize:12, color:'#64748b' }}>特別業務:</span>
-        {specialTasks.map(t => (
-          <button key={t.id}
-            onClick={() => setSpecialTasks(prev => prev.map(x => x.id === t.id ? {...x, enabled: !x.enabled} : x))}
-            style={{
-              fontSize:12, padding:'4px 12px', borderRadius:20, border:`1px solid ${t.enabled ? '#cbd5e1' : '#dde5f0'}`,
-              background: t.enabled ? '#eef2ff' : '#f8fafc', color: t.enabled ? '#1e293b' : '#94a3b8',
-              fontWeight: t.enabled ? 600 : 400, cursor:'pointer', fontFamily:'inherit',
-            }}>
-            {t.enabled ? '✓' : '○'} {t.name} ({t.startTime}〜{t.endTime})
-          </button>
-        ))}
+      {/* ── Daily pattern selector ── */}
+      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', flexShrink:0 }}>
+        <span style={{ fontSize:12, color:'#64748b' }}>{selectedDay}日のパターン:</span>
+        {Object.entries(SALES_PATTERNS).map(([key, p]) => {
+          const on = currentPatternKey === key
+          return (
+            <button key={key} onClick={() => setDayPatternMap(prev => ({ ...prev, [selectedDay]: key }))} style={{
+              padding:'5px 14px', borderRadius:18, border:'none', cursor:'pointer', fontSize:12,
+              fontWeight: on ? 700 : 500, fontFamily:'inherit',
+              background: on ? '#4f46e5' : '#f0f5f9',
+              color:      on ? 'white'   : '#475569',
+            }}>{p.label}</button>
+          )
+        })}
+        <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>
+          適用パターン売上合計: ¥{Object.values(currentPattern?.hourlySales || {}).reduce((a,b)=>a+b,0).toLocaleString()}
+        </span>
+      </div>
+
+      {/* ── Special task toggles (per-day) ── */}
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-start', flexShrink:0 }}>
+        <span style={{ fontSize:12, color:'#64748b', paddingTop:6 }}>特別業務:</span>
+        {effectiveTasks.map(t => {
+          const isEditing = editDayTask === t.id
+          const ov = dayTaskOverrides[selectedDay]?.[t.id]
+          return (
+            <div key={t.id} style={{ display:'flex', flexDirection:'column', gap:4 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <button
+                  onClick={() => setDayOverride(selectedDay, t.id, { enabled: !t.enabled })}
+                  style={{
+                    fontSize:12, padding:'4px 12px', borderRadius:20, border:`1px solid ${t.enabled ? '#cbd5e1' : '#dde5f0'}`,
+                    background: t.enabled ? '#eef2ff' : '#f8fafc', color: t.enabled ? '#1e293b' : '#94a3b8',
+                    fontWeight: t.enabled ? 600 : 400, cursor:'pointer', fontFamily:'inherit',
+                  }}>
+                  {t.enabled ? '✓' : '○'} {t.name} ({t.startTime}〜{t.endTime} /{t.requiredStaff}名)
+                </button>
+                <button onClick={() => setEditDayTask(isEditing ? null : t.id)}
+                  style={{ fontSize:10, color:'#6366f1', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit' }}>
+                  {isEditing ? '閉じる' : 'この日のみ変更'}
+                </button>
+                {ov && <span style={{ fontSize:10, color:'#f59e0b', fontWeight:600 }}>※上書き中</span>}
+              </div>
+              {isEditing && (
+                <div style={{ display:'flex', gap:8, padding:'8px 12px', background:'#fafafa', border:'1px solid #e2e8f0', borderRadius:8, alignItems:'center', flexWrap:'wrap', fontSize:12 }}>
+                  <label style={{ color:'#475569', fontWeight:600 }}>開始</label>
+                  <input type="time" defaultValue={t.startTime.padStart(5,'0')}
+                    onChange={e => setDayOverride(selectedDay, t.id, { startTime: e.target.value })}
+                    style={{ padding:'3px 6px', borderRadius:6, border:'1px solid #dde5f0', fontSize:12, fontFamily:'inherit' }} />
+                  <label style={{ color:'#475569', fontWeight:600 }}>終了</label>
+                  <input type="time" defaultValue={t.endTime.padStart(5,'0')}
+                    onChange={e => setDayOverride(selectedDay, t.id, { endTime: e.target.value })}
+                    style={{ padding:'3px 6px', borderRadius:6, border:'1px solid #dde5f0', fontSize:12, fontFamily:'inherit' }} />
+                  <label style={{ color:'#475569', fontWeight:600 }}>必要人数</label>
+                  <input type="number" min={1} max={10} defaultValue={t.requiredStaff}
+                    onChange={e => setDayOverride(selectedDay, t.id, { requiredStaff: Number(e.target.value) })}
+                    style={{ width:48, padding:'3px 6px', borderRadius:6, border:'1px solid #dde5f0', fontSize:12, fontFamily:'inherit', textAlign:'center' }} />
+                  <button onClick={() => { setDayTaskOverrides(prev => { const n = {...prev}; if(n[selectedDay]) { delete n[selectedDay][t.id] }; return n }); setEditDayTask(null) }}
+                    style={{ fontSize:11, color:'#94a3b8', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>リセット</button>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* ── Main grid ── */}
@@ -293,6 +408,24 @@ export default function ShiftDecision() {
               <td style={td()} />
               {SUMM.map(s => <td key={s.k} style={td()} />)}
             </tr>
+            {/* ── スキル別配置数 ── */}
+            {Object.entries(skillLabels).map(([key, label]) => (
+              <tr key={key}>
+                <td style={td({ ...sL0, textAlign:'left', background:'#fafafa', color:'#475569', fontWeight:600, borderRight:BB, fontSize:11 })}>
+                  スキル: {label}<br/><span style={{ fontSize:9, fontWeight:400, color:'#94a3b8' }}>配置数</span>
+                </td>
+                <td colSpan={2} style={td({ ...sL1, background:'#fafafa', color:'#94a3b8', fontSize:10 })}>人数</td>
+                {slots.map(slot => {
+                  const cnt = getAssignedList(slot).filter(id => staff.find(s => s.id === id)?.skills.includes(key)).length
+                  return <td key={slot} style={td({ background: cnt > 0 ? '#eef2ff' : '#fafafa', color: cnt > 0 ? '#3730a3' : '#e2e8f0', fontWeight: cnt > 0 ? 700 : 400 })}>{cnt > 0 ? cnt : ''}</td>
+                })}
+                <td style={td({ background:'#eef2ff', color:'#3730a3', fontWeight:700 })}>
+                  {slots.reduce((s, slot) => s + getAssignedList(slot).filter(id => staff.find(m => m.id === id)?.skills.includes(key)).length, 0)}
+                </td>
+                {SUMM.map(s => <td key={s.k} style={td({ background:'#fafafa' })} />)}
+              </tr>
+            ))}
+
             {/* ── 合計時間 ── */}
             <tr>
               <td style={td({ ...sL0, textAlign:'left', background:'white', color:'#334155', fontWeight:600, borderRight:BB, borderBottom:'2px solid #cbd5e1' })}>合計時間</td>
@@ -339,10 +472,13 @@ export default function ShiftDecision() {
                   <td style={td({ background:rowBg })} />
                   {SUMM.map(col => {
                     const v = summ ? (
-                      col.k === 'work'  ? summ.work.toFixed(2) :
-                      col.k === 'labor' ? summ.labor.toFixed(2) :
-                      col.k === 'night' ? (summ.night > 0 ? summ.night.toFixed(2) : '') :
-                      col.k === 'pay'   ? `¥${summ.pay.toLocaleString()}` : ''
+                      col.k === 'work'         ? summ.work.toFixed(2) :
+                      col.k === 'labor'        ? summ.labor.toFixed(2) :
+                      col.k === 'overtime'     ? (summ.overtime > 0    ? summ.overtime.toFixed(2)    : '') :
+                      col.k === 'lateNight'    ? (summ.lateNight > 0   ? summ.lateNight.toFixed(2)   : '') :
+                      col.k === 'otLateNight'  ? (summ.otLateNight > 0 ? summ.otLateNight.toFixed(2) : '') :
+                      col.k === 'pay'          ? `¥${summ.pay.toLocaleString()}` :
+                      col.k === 'trans'        ? `¥${summ.trans.toLocaleString()}` : ''
                     ) : ''
                     return <td key={col.k} style={td({ background: rowBg, color:'#334155', fontWeight: v ? 500 : 400 })}>{v}</td>
                   })}
@@ -383,6 +519,42 @@ export default function ShiftDecision() {
           </span>
         ))}
       </div>
+
+      {/* ── Publish Modal ── */}
+      {showPublish && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:440, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0' }}>
+              <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>📢 シフト受付を開始する</div>
+              <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>スタッフへシフト提出の通知を送ります</div>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:'#475569', display:'block', marginBottom:8 }}>提出期限日</label>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <select value={publishEndDay} onChange={e => setPublishEndDay(Number(e.target.value))}
+                    style={{ padding:'8px 12px', borderRadius:8, border:'1px solid #dde5f0', fontSize:13, color:'#0f172a', fontFamily:'inherit', outline:'none' }}>
+                    {daysConfig.map(d => <option key={d.day} value={d.day}>{d.day}日({d.dow})</option>)}
+                  </select>
+                  <span style={{ fontSize:13, color:'#64748b' }}>まで</span>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:'#475569', display:'block', marginBottom:6 }}>通知プレビュー</label>
+                <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'12px 14px', fontSize:12, color:'#334155', lineHeight:1.7 }}>
+                  【シフト受付開始】<br/>
+                  {YEAR_MONTH}前半のシフト提出をお願いします。<br/>
+                  {publishEndDay}日までにアプリからご提出ください。
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:'12px 24px 20px', display:'flex', gap:10 }}>
+              <button onClick={() => setShowPublish(false)} style={{ flex:1, padding:'10px 0', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer' }}>キャンセル</button>
+              <button onClick={handlePublish} style={{ flex:1, padding:'10px 0', borderRadius:8, border:'none', background:'#f59e0b', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>通知を送る</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── AI Modal ── */}
       {showAI && (

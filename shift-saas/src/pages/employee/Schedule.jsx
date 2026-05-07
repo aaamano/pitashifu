@@ -17,7 +17,7 @@ function parseCode(code) {
 
 const STATUS = {
   confirmed: { label: '確定済み', cellBg: 'var(--pita-shift-work)', badgeBg: '#dcfce7', badgeColor: '#14532d' },
-  submitted: { label: '提出済み', cellBg: '#93c5fd',                badgeBg: '#dbeafe', badgeColor: '#1e40af' },
+  submitted: { label: '提出済み', cellBg: '#818cf8',                badgeBg: '#eef0fe', badgeColor: '#3730a3' },
   draft:     { label: '下書き',   cellBg: '#fde68a',                badgeBg: '#fef3c7', badgeColor: '#92400e' },
 }
 
@@ -37,7 +37,7 @@ export default function Schedule({ base = '/employee', sukima = false }) {
   return (
     <>
       <div className="pita-phone-header">
-        <div style={{ width:32, height:32, borderRadius:'50%', background:'var(--pita-accent)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>
+        <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>
           {ME.name[0]}
         </div>
         <div style={{ flex:1, minWidth:0 }}>
