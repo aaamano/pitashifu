@@ -101,7 +101,48 @@ export default function Targets() {
   const [hourlyTargets, setHourlyTargets] = useState({})   // { [day]: { [hour]: { sales, laborCost } } }
   const [patterns, setPatterns] = useState(SALES_PATTERNS) // editable 5 patterns
   const [activePattern, setActivePattern] = useState('weekday1')
+  const [showCsvModal, setShowCsvModal] = useState(false)
+  const [pendingCsvFile, setPendingCsvFile] = useState(null)
   const fileInputRef = useRef(null)
+
+  const downloadCsvFormat = () => {
+    const header = '日,曜日,売上(千円),客数,注文数'
+    const rows = dailyTargets.map(d => `${d.day},${d.dow},${d.sales},${d.customers},${d.orders}`)
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'targets_format.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const executeCsvUpload = () => {
+    if (!pendingCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const lines = ev.target.result.trim().split('\n')
+        const parsed = lines.filter(l => /^\d+/.test(l.split(',')[0].trim())).map(line => {
+          const p = line.split(',').map(s => s.trim())
+          const day = parseInt(p[0]), dow = p[1] || ''
+          const sales = parseFloat(p[2]) || 0
+          const customers = Math.round(sales * 1000 / 3000)
+          const avgSpend = customers > 0 ? Math.round(sales * 1000 / customers) : 3000
+          const orders = parseInt(p[4]) || Math.round(customers * 1.5)
+          return { day, dow, sales, customers, avgSpend, orders }
+        }).filter(d => d.day >= 1 && d.day <= 31)
+        if (!parsed.length) { setCsvMsg('CSVの形式が正しくありません。'); setShowCsvModal(false); return }
+        setTargets(prev => prev.map(d => { const f = parsed.find(p => p.day === d.day); return f ? { ...d, ...f } : d }))
+        setCsvMsg(`✓ ${parsed.length}日分のデータを読み込みました`)
+        setTimeout(() => setCsvMsg(''), 3000)
+      } catch { setCsvMsg('CSVの読み込みに失敗しました。') }
+    }
+    reader.readAsText(pendingCsvFile, 'UTF-8')
+    setShowCsvModal(false)
+    setPendingCsvFile(null)
+  }
 
   const updatePatternHour = (key, hour, value) => {
     setPatterns(prev => ({
@@ -133,31 +174,6 @@ export default function Targets() {
 
   const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
 
-  const handleCsvUpload = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const lines = ev.target.result.trim().split('\n')
-        const parsed = lines.filter(l => /^\d+/.test(l.split(',')[0].trim())).map(line => {
-          const p = line.split(',').map(s => s.trim())
-          const day = parseInt(p[0]), dow = p[1] || ''
-          const sales = parseFloat(p[2]) || 0
-          const customers = Math.round(sales * 1000 / 3000)
-          const avgSpend = customers > 0 ? Math.round(sales * 1000 / customers) : 3000
-          const orders = parseInt(p[4]) || Math.round(customers * 1.5)
-          return { day, dow, sales, customers, avgSpend, orders }
-        }).filter(d => d.day >= 1 && d.day <= 31)
-        if (!parsed.length) { setCsvMsg('CSVの形式が正しくありません。'); return }
-        setTargets(prev => prev.map(d => { const f = parsed.find(p => p.day === d.day); return f ? { ...d, ...f } : d }))
-        setCsvMsg(`✓ ${parsed.length}日分のデータを読み込みました`)
-        setTimeout(() => setCsvMsg(''), 3000)
-      } catch { setCsvMsg('CSVの読み込みに失敗しました。') }
-    }
-    reader.readAsText(file, 'UTF-8')
-    e.target.value = ''
-  }
 
   const totalSales     = targets.reduce((s, d) => s + d.sales, 0)
   const totalCust      = targets.reduce((s, d) => s + d.customers, 0)
@@ -203,10 +219,11 @@ export default function Targets() {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
-          <button onClick={() => fileInputRef.current?.click()} className="mgr-btn-secondary">
+          <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">
             CSV アップロード
           </button>
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+            onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
           <button onClick={handleSave} className="mgr-btn-primary">
             {saved ? '✓ 保存しました' : '保存する'}
           </button>
@@ -531,6 +548,65 @@ export default function Targets() {
           </div>
         )
       })()}
+
+      {/* ── CSV Upload Modal ── */}
+      {showCsvModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:460, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>CSV アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>目標データをCSVファイルから読み込みます</div>
+              </div>
+              <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:18 }}>
+              {/* Format download */}
+              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'14px 16px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:10, lineHeight:1.6 }}>
+                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>日,曜日,売上(千円),客数,注文数</code>
+                </div>
+                <button onClick={downloadCsvFormat} style={{
+                  display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8,
+                  border:'1px solid #4f46e5', background:'white', color:'#4f46e5',
+                  fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+                }}>
+                  ↓ フォーマットをダウンロード
+                </button>
+              </div>
+              {/* File picker */}
+              <div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <button onClick={() => fileInputRef.current?.click()} style={{
+                    padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0',
+                    background:'#f8fafc', color:'#475569', fontSize:13, fontWeight:600,
+                    cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap',
+                  }}>
+                    ファイルを選択
+                  </button>
+                  <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:'14px 24px', borderTop:'1px solid #e2e8f0', display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={() => { setShowCsvModal(false); setPendingCsvFile(null) }} style={{
+                padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white',
+                color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+              }}>キャンセル</button>
+              <button onClick={executeCsvUpload} disabled={!pendingCsvFile} style={{
+                padding:'9px 18px', borderRadius:8, border:'none',
+                background: pendingCsvFile ? '#4f46e5' : '#c7d2fe',
+                color:'white', fontSize:13, fontWeight:600,
+                cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit',
+              }}>アップロードを実行</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
