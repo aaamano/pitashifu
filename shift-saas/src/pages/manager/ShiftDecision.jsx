@@ -26,6 +26,9 @@ function getTasksForSlotMin(slotMin, tasks) {
   })
 }
 
+const LATE_THRESHOLD  = 21  // 前日この時刻以降終了 = 遅番
+const EARLY_THRESHOLD = 9   // 当日この時刻以前開始 = 早番
+
 function runAIForDays(days, slots, staffList, constraints, targets, specialTasks) {
   const result = {}
   let avoidedConflicts = 0
@@ -49,6 +52,11 @@ function runAIForDays(days, slots, staffList, constraints, targets, specialTasks
           if (alreadyIn.includes(staffId)) { score -= severity * 15; avoidedConflicts++ }
         }
         if ((constraints[s.id]?.targetEarnings ?? 0) > 0) score += 8
+        // Low-priority penalty: avoid early shift after late-night shift
+        if (day > 1 && slotDec <= EARLY_THRESHOLD) {
+          const prevTimes = parseShiftTimes(shiftData[s.id]?.[day - 2])
+          if (prevTimes && prevTimes.end >= LATE_THRESHOLD) score -= 12
+        }
         return { s, score }
       })
       scored.sort((a, b) => b.score - a.score)
@@ -170,6 +178,13 @@ export default function ShiftDecision() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slots, selectedDay, currentPatternKey])
 
+  const isLateEarlyAlert = (staffId) => {
+    if (selectedDay <= 1) return false
+    const prevTimes = parseShiftTimes(shiftData[staffId]?.[selectedDay - 2])
+    const currTimes = parseShiftTimes(shiftData[staffId]?.[selectedDay - 1])
+    return !!(prevTimes && currTimes && prevTimes.end >= LATE_THRESHOLD && currTimes.start <= EARLY_THRESHOLD)
+  }
+
   const getShiftSummary = (staffId) => {
     const code = shiftData[staffId]?.[selectedDay - 1] || 'X'
     const t = parseShiftTimes(code)
@@ -177,9 +192,10 @@ export default function ShiftDecision() {
     const member = staff.find(s => s.id === staffId)
     const wage   = member?.wage ?? 1050
     const trans  = member?.transitPerDay ?? 0
-    const { work, labor, overtime, lateNight, otLateNight } = decomposeShiftHours(t.start, t.end)
+    const decomp = decomposeShiftHours(t.start, t.end)
+    const { work, labor, overtime, lateNight, otLateNight, breakStart, breakEnd } = decomp
     const pay = calcDailyPay(wage, labor, overtime, lateNight, otLateNight)
-    return { start: t.start, end: t.end, work, labor, overtime, lateNight, otLateNight, pay: Math.round(pay), trans }
+    return { start: t.start, end: t.end, work, labor, overtime, lateNight, otLateNight, pay: Math.round(pay), trans, breakStart, breakEnd }
   }
 
   const reqColor = (cnt, req) => {
@@ -450,22 +466,34 @@ export default function ShiftDecision() {
             </tr>
             {workingStaff.map((s, idx) => {
               const summ = getShiftSummary(s.id)
-              const rowBg = idx % 2 === 0 ? 'white' : '#fafafa'
+              const alert = isLateEarlyAlert(s.id)
+              const rowBg = alert ? '#fff7ed' : idx % 2 === 0 ? 'white' : '#fafafa'
+              const nameBg = alert ? '#fed7aa' : rowBg
               return (
                 <tr key={s.id}>
-                  <td style={td({ ...sL0, textAlign:'left', background:rowBg, fontWeight:600, color:'#0f172a', borderRight:BB })}>{s.name}</td>
+                  <td style={td({ ...sL0, textAlign:'left', background:nameBg, fontWeight:600, color: alert ? '#9a3412' : '#0f172a', borderRight:BB })}>
+                    {alert && <span style={{ fontSize:9, marginRight:4, color:'#ea580c' }}>⚠</span>}
+                    {s.name}
+                  </td>
                   <td style={td({ ...sL1, background:rowBg, textAlign:'center', color:'#64748b' })}>{summ ? summ.start.toFixed(2) : ''}</td>
                   <td style={td({ ...sL2, background:rowBg, textAlign:'center', color:'#64748b' })}>{summ ? summ.end.toFixed(2) : ''}</td>
                   {slots.map(slot => {
                     const w = isWorking(s.id, slot)
                     const a = getAssignedList(slot).includes(s.id)
+                    const [sh, sm] = slot.split(':').map(Number)
+                    const slotDec = sh + sm / 60
+                    const isBreak = summ?.breakStart != null && slotDec >= summ.breakStart && slotDec < summ.breakEnd
+                    let bg = rowBg
+                    let color = '#6366f1'
+                    if (a)       { bg = '#818cf8'; color = 'white' }
+                    else if (isBreak && w) { bg = '#fed7aa'; color = '#9a3412' }
+                    else if (w)  { bg = alert ? '#ffe4cc' : '#e0e7ff' }
                     return (
                       <td key={slot} onClick={() => toggleCell(s.id, slot)} style={td({
                         padding:0, textAlign:'center', cursor: w ? 'pointer' : 'default',
-                        background: a ? '#818cf8' : w ? '#e0e7ff' : rowBg,
-                        color: a ? 'white' : '#6366f1',
+                        background: bg, color,
                       })}>
-                        {w && !a ? <span style={{ fontSize:8 }}>·</span> : ''}
+                        {isBreak && w && !a ? <span style={{ fontSize:8 }}>休</span> : w && !a ? <span style={{ fontSize:8 }}>·</span> : ''}
                       </td>
                     )
                   })}
@@ -509,13 +537,15 @@ export default function ShiftDecision() {
       {/* ── Legend ── */}
       <div style={{ display:'flex', gap:16, fontSize:10, color:'var(--pita-muted)', flexWrap:'wrap', flexShrink:0 }}>
         {[
-          { bg:'var(--pita-shift-work)', label:'配置済み（クリックで解除）' },
-          { bg:'var(--pita-shift-soft)', label:'出勤中・未配置（クリックで配置）', border:B },
-          { bg:'var(--pita-bg-subtle)',  label:'休み', border:B },
-        ].map(({ bg, label, border: bd }) => (
+          { bg:'#818cf8',              color:'white',   label:'配置済み（クリックで解除）' },
+          { bg:'#e0e7ff',              color:'#6366f1', label:'出勤中・未配置（クリックで配置）', border:B },
+          { bg:'#fed7aa',              color:'#9a3412', label:'休憩時間帯' },
+          { bg:'#fff7ed',              color:'#9a3412', label:'⚠ 遅番→早番アラート行', border:'1px solid #fed7aa' },
+          { bg:'var(--pita-bg-subtle)', color:'',       label:'休み', border:B },
+        ].map(({ bg, label, border: bd, color }) => (
           <span key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
             <span style={{ width:16, height:12, borderRadius:2, background:bg, border:bd, display:'inline-block' }} />
-            {label}
+            <span style={{ color }}>{label}</span>
           </span>
         ))}
       </div>
