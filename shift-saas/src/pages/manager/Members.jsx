@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { staff as initialStaff, shiftData, daysConfig, skillLabels, YEAR_MONTH, staffConstraints as initialConstraints } from '../../data/mockData'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -55,6 +55,69 @@ export default function Members() {
   const [addIncompat,     setAddIncompat]     = useState(null)
   const [addSeverity,     setAddSeverity]     = useState(3)
 
+  const [showCsvModal,   setShowCsvModal]   = useState(false)
+  const [pendingCsvFile, setPendingCsvFile] = useState(null)
+  const [csvMsg,         setCsvMsg]         = useState('')
+  const fileInputRef = useRef(null)
+
+  const MEMBER_CSV_HEADER = ['スタッフ名','雇用形態','役職','スキル(;区切り)','時給(円)','交通費/日(円)','残留優先度']
+
+  const downloadMemberCsv = () => {
+    const labelToKey = Object.fromEntries(Object.entries(skillLabels).map(([k, v]) => [v, k]))
+    const skillKey = Object.fromEntries(Object.entries(skillLabels))
+    const headerExtra = daysConfig.map(d => `${d.day}日(${d.dow})`)
+    const header = [...MEMBER_CSV_HEADER, ...headerExtra].join(',')
+    const rows = members.map(m => {
+      const c = constraints[m.id] || BLANK_CONSTRAINT
+      const skillStr = m.skills.map(sk => skillLabels[sk] || sk).join(';')
+      const shiftCols = daysConfig.map((_, i) => shiftData[m.id]?.[i] || 'X')
+      return [m.name, m.type, m.role, skillStr, m.wage, m.transitPerDay ?? 0, c.retentionPriority, ...shiftCols].join(',')
+    })
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'members_format.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const executeMemberCsvUpload = () => {
+    if (!pendingCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const labelToKey = Object.fromEntries(Object.entries(skillLabels).map(([k, v]) => [v, k]))
+        const lines = ev.target.result.replace(/^﻿/, '').trim().split('\n').slice(1)
+        let updated = 0
+        const nextMembers = [...members]
+        const nextConstraints = { ...constraints }
+        lines.forEach(line => {
+          const p = line.split(',').map(s => s.trim())
+          if (p.length < 5) return
+          const [name, type, role, skillsRaw, wageStr, transitStr, priorityStr] = p
+          if (!name) return
+          const idx = nextMembers.findIndex(m => m.name === name)
+          if (idx < 0) return
+          const skills = skillsRaw ? skillsRaw.split(';').map(s => labelToKey[s.trim()]).filter(Boolean) : nextMembers[idx].skills
+          const wage       = parseInt(wageStr)  || nextMembers[idx].wage
+          const transit    = parseInt(transitStr) >= 0 ? parseInt(transitStr) : nextMembers[idx].transitPerDay
+          const priority   = parseInt(priorityStr) || nextMembers[idx].retentionPriority
+          nextMembers[idx] = { ...nextMembers[idx], type: type || nextMembers[idx].type, role: role || nextMembers[idx].role, skills, wage, transitPerDay: transit }
+          const cid = nextMembers[idx].id
+          nextConstraints[cid] = { ...(nextConstraints[cid] || BLANK_CONSTRAINT), retentionPriority: Math.min(10, Math.max(1, priority)) }
+          updated++
+        })
+        if (!updated) { setCsvMsg('一致するスタッフ名が見つかりませんでした。'); setShowCsvModal(false); return }
+        setMembers(nextMembers)
+        setConstraints(nextConstraints)
+        setCsvMsg(`✓ ${updated}名のデータを更新しました`)
+        setTimeout(() => setCsvMsg(''), 3000)
+      } catch { setCsvMsg('CSVの読み込みに失敗しました。') }
+    }
+    reader.readAsText(pendingCsvFile, 'UTF-8')
+    setShowCsvModal(false)
+    setPendingCsvFile(null)
+  }
+
   const filtered = members.filter(m =>
     m.name.includes(search) && (filterSkill ? m.skills.includes(filterSkill) : true)
   )
@@ -104,14 +167,18 @@ export default function Members() {
     <div className="mgr-page">
 
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexWrap:'wrap', gap:10 }}>
         <div>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{YEAR_MONTH} 前半</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>メンバー管理</div>
         </div>
-        <button onClick={openNew} className="mgr-btn-primary">
-          + スタッフを追加
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
+          <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">CSV アップロード</button>
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+            onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
+          <button onClick={openNew} className="mgr-btn-primary">+ スタッフを追加</button>
+        </div>
       </div>
 
       {/* Search + filter controls */}
@@ -277,6 +344,48 @@ export default function Members() {
           </table>
         </div>
       </div>
+
+      {/* ── CSV Upload Modal ── */}
+      {showCsvModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:500, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>メンバー CSV アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>スタッフのマスターデータをCSVで一括更新します</div>
+              </div>
+              <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:18 }}>
+              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'14px 16px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6 }}>
+                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>スタッフ名,雇用形態,役職,スキル(;区切り),時給(円),交通費/日(円),残留優先度,1日〜30日</code>
+                </div>
+                <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>スキルはバリスタ;レジ;フロア の形式。スタッフ名で既存レコードを照合します。</div>
+                <button onClick={downloadMemberCsv} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                  ↓ フォーマットをダウンロード
+                </button>
+              </div>
+              <div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <button onClick={() => fileInputRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'#f8fafc', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                    ファイルを選択
+                  </button>
+                  <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:'14px 24px', borderTop:'1px solid #e2e8f0', display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={() => { setShowCsvModal(false); setPendingCsvFile(null) }} style={{ padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>キャンセル</button>
+              <button onClick={executeMemberCsvUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal ── */}
       {showModal && (

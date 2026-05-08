@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import {
   staff, shiftData, daysConfig, YEAR_MONTH,
   decomposeShiftHours, calcDailyPay, calcMonthlyPayroll, parseShiftTimes, PAYROLL,
@@ -34,12 +34,87 @@ const yen = (v) => `¥${Math.round(v).toLocaleString()}`
 export default function Payroll() {
   const [half, setHalf] = useState('first')
   const period = HALVES.find(h => h.key === half)
+  const [showCsvModal,    setShowCsvModal]    = useState(false)
+  const [pendingCsvFile,  setPendingCsvFile]  = useState(null)
+  const [csvMsg,          setCsvMsg]          = useState('')
+  // manualOverrides: { [staffName]: row values } — allows uploading manual adjustments
+  const [manualOverrides, setManualOverrides] = useState({})
+  const fileInputRef = useRef(null)
+
+  const PAYROLL_CSV_COLS = ['STAFF','総勤務時間(h)','総勤務日数','給与合計額(円)','交通費合計額(円)','社会保険加入','社会保険料(円)','雇用保険料(円)','厚生年金料(円)','所得税(円)','合計振込予定額(円)']
+
+  const downloadPayrollCsv = () => {
+    const header = PAYROLL_CSV_COLS.join(',')
+    const dataRows = staff.map(s => {
+      const totals  = staffMonthlyTotals(s, period.from, period.to)
+      const payroll = calcMonthlyPayroll(s, totals)
+      const ov = manualOverrides[s.name]
+      return [
+        s.name,
+        (ov?.totalHours  ?? totals.totalHours.toFixed(1)),
+        (ov?.totalDays   ?? totals.totalDays),
+        (ov?.totalPay    ?? Math.round(totals.totalPay)),
+        (ov?.totalTransit?? totals.totalTransit),
+        payroll.enroll ? 'ENTRY' : '—',
+        payroll.socialIns ? Math.round(ov?.socialIns ?? payroll.socialIns) : 0,
+        payroll.empIns    ? Math.round(ov?.empIns    ?? payroll.empIns)    : 0,
+        payroll.pension   ? Math.round(ov?.pension   ?? payroll.pension)   : 0,
+        payroll.incomeTax ? Math.round(ov?.incomeTax ?? payroll.incomeTax) : 0,
+        Math.round(ov?.finalPay ?? payroll.finalPay),
+      ].join(',')
+    })
+    const csv = [header, ...dataRows].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `payroll_${period.key}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const executePayrollCsvUpload = () => {
+    if (!pendingCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const lines = ev.target.result.replace(/^﻿/, '').trim().split('\n').slice(1)
+        const next = {}
+        let count = 0
+        lines.forEach(line => {
+          const p = line.split(',').map(s => s.trim())
+          if (p.length < 11) return
+          const name = p[0]
+          if (!name || name === 'TOTAL') return
+          next[name] = {
+            totalHours:   parseFloat(p[1])  || null,
+            totalDays:    parseInt(p[2])    || null,
+            totalPay:     parseInt(p[3])    || null,
+            totalTransit: parseInt(p[4])    || null,
+            socialIns:    parseInt(p[6])    || null,
+            empIns:       parseInt(p[7])    || null,
+            pension:      parseInt(p[8])    || null,
+            incomeTax:    parseInt(p[9])    || null,
+            finalPay:     parseInt(p[10])   || null,
+          }
+          count++
+        })
+        if (!count) { setCsvMsg('CSVの形式が正しくありません。'); setShowCsvModal(false); return }
+        setManualOverrides(next)
+        setCsvMsg(`✓ ${count}名分の手動調整データを読み込みました`)
+        setTimeout(() => setCsvMsg(''), 3000)
+      } catch { setCsvMsg('CSVの読み込みに失敗しました。') }
+    }
+    reader.readAsText(pendingCsvFile, 'UTF-8')
+    setShowCsvModal(false)
+    setPendingCsvFile(null)
+  }
 
   const rows = useMemo(() => staff.map(s => {
-    const totals = staffMonthlyTotals(s, period.from, period.to)
+    const totals  = staffMonthlyTotals(s, period.from, period.to)
     const payroll = calcMonthlyPayroll(s, totals)
-    return { s, totals, payroll }
-  }), [half])
+    const ov = manualOverrides[s.name]
+    const mergedTotals  = ov ? { ...totals,  ...(ov.totalHours  != null ? { totalHours:  ov.totalHours  } : {}), ...(ov.totalDays != null ? { totalDays: ov.totalDays } : {}), ...(ov.totalPay != null ? { totalPay: ov.totalPay } : {}), ...(ov.totalTransit != null ? { totalTransit: ov.totalTransit } : {}) } : totals
+    const mergedPayroll = ov ? { ...payroll, ...(ov.socialIns != null ? { socialIns: ov.socialIns } : {}), ...(ov.empIns != null ? { empIns: ov.empIns } : {}), ...(ov.pension != null ? { pension: ov.pension } : {}), ...(ov.incomeTax != null ? { incomeTax: ov.incomeTax } : {}), ...(ov.finalPay != null ? { finalPay: ov.finalPay } : {}) } : payroll
+    return { s, totals: mergedTotals, payroll: mergedPayroll, hasOverride: !!ov }
+  }), [half, manualOverrides])
 
   const grand = useMemo(() => rows.reduce((acc, { totals, payroll }) => ({
     totalHours:    acc.totalHours    + totals.totalHours,
@@ -75,7 +150,11 @@ export default function Payroll() {
           <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>月次振込予定</h1>
           <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>シフト確定済みデータから算出。前半/後半/全月で集計を切り替えできます。</p>
         </div>
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
+          <button onClick={() => setShowCsvModal(true)} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>CSV アップロード</button>
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+            onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
           {HALVES.map(h => (
             <button key={h.key} onClick={() => setHalf(h.key)} style={{
               padding:'7px 16px', borderRadius:20, fontSize:12, fontWeight: half === h.key ? 700 : 500,
@@ -115,9 +194,12 @@ export default function Payroll() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ s, totals, payroll }, idx) => (
+            {rows.map(({ s, totals, payroll, hasOverride }, idx) => (
               <tr key={s.id} style={{ borderBottom:'1px solid #f0f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
-                <td style={{ padding:'8px 12px', fontWeight:600, color:'#0f172a' }}>{s.name}</td>
+                <td style={{ padding:'8px 12px', fontWeight:600, color:'#0f172a' }}>
+                  {s.name}
+                  {hasOverride && <span title="手動調整済み" style={{ fontSize:9, marginLeft:5, background:'#fef3c7', color:'#92400e', padding:'1px 4px', borderRadius:3, fontWeight:700 }}>手動</span>}
+                </td>
                 <td style={{ padding:'8px 12px', textAlign:'center', color:'#334155' }}>{totals.totalHours.toFixed(1)}h</td>
                 <td style={{ padding:'8px 12px', textAlign:'center', color:'#334155' }}>{totals.totalDays}</td>
                 <td style={{ padding:'8px 12px', textAlign:'right', fontWeight:600, color:'#0f172a' }}>{yen(totals.totalPay)}</td>
@@ -152,6 +234,58 @@ export default function Payroll() {
           </tfoot>
         </table>
       </div>
+
+      {/* ── CSV Upload Modal ── */}
+      {showCsvModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:520, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>月次振込予定 CSV アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>振込データのエクスポート/手動調整インポートができます</div>
+              </div>
+              <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:18 }}>
+              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'14px 16px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6, wordBreak:'break-all' }}>
+                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>{PAYROLL_CSV_COLS.join(',')}</code>
+                </div>
+                <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10, lineHeight:1.5 }}>
+                  現在の計算結果をCSVでエクスポートします。<br />
+                  アップロードすると数値を手動調整できます（スタッフ名で照合）。手動調整行には「手動」バッジが表示されます。
+                </div>
+                <button onClick={downloadPayrollCsv} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                  ↓ フォーマットをダウンロード
+                </button>
+              </div>
+              <div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <button onClick={() => fileInputRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'#f8fafc', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                    ファイルを選択
+                  </button>
+                  <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
+                  </span>
+                </div>
+              </div>
+              {Object.keys(manualOverrides).length > 0 && (
+                <div style={{ fontSize:11.5, color:'#92400e', background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, padding:'8px 12px' }}>
+                  現在 {Object.keys(manualOverrides).length}名分の手動調整データが適用中です。
+                  <button onClick={() => { setManualOverrides({}); setCsvMsg('手動調整をリセットしました'); setTimeout(() => setCsvMsg(''), 2000) }}
+                    style={{ marginLeft:8, fontSize:11, color:'#dc2626', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit' }}>リセット</button>
+                </div>
+              )}
+            </div>
+            <div style={{ padding:'14px 24px', borderTop:'1px solid #e2e8f0', display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={() => { setShowCsvModal(false); setPendingCsvFile(null) }} style={{ padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>キャンセル</button>
+              <button onClick={executePayrollCsvUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop:14, padding:'10px 16px', background:'white', border:'1px solid #dde5f0', borderRadius:8, fontSize:11, color:'#64748b', lineHeight:1.7 }}>
         <strong style={{ color:'#475569' }}>計算式:</strong> 給与 = 時給×労働 + 時給×{PAYROLL.overtimeMultiplier*100}%×超勤 + 時給×{PAYROLL.lateNightMultiplier*100}%×深夜 + 時給×{PAYROLL.lateNightOTMultiplier*100}%×残深 ／
