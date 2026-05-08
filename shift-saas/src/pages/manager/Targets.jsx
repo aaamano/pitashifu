@@ -104,10 +104,20 @@ export default function Targets() {
   const [showCsvModal, setShowCsvModal] = useState(false)
   const [pendingCsvFile, setPendingCsvFile] = useState(null)
   const fileInputRef = useRef(null)
+  const [showPatternCsvModal, setShowPatternCsvModal] = useState(false)
+  const [pendingPatternCsvFile, setPendingPatternCsvFile] = useState(null)
+  const [patternCsvMsg, setPatternCsvMsg] = useState('')
+  const patternFileInputRef = useRef(null)
+
+  const TARGET_HEADER_COLS = ['日','曜日','売上目標(千円)','客数目標(名)','客単価(円)','注文数(件)','人件費目標(千円)','人件比率(%)','人時生産性(円)']
 
   const downloadCsvFormat = () => {
-    const header = '日,曜日,売上(千円),客数,注文数'
-    const rows = dailyTargets.map(d => `${d.day},${d.dow},${d.sales},${d.customers},${d.orders}`)
+    const header = TARGET_HEADER_COLS.join(',')
+    const rows = dailyTargets.map(d => {
+      const ratio = d.sales > 0 ? ((d.laborCost || 0) / d.sales * 100).toFixed(1) : ''
+      const prod  = (d.laborCost || 0) > 0 ? Math.round(d.sales * AVG_WAGE / d.laborCost) : ''
+      return [d.day, d.dow, d.sales, d.customers, d.avgSpend, d.orders, d.laborCost || 0, ratio, prod].join(',')
+    })
     const csv = [header, ...rows].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -126,12 +136,15 @@ export default function Targets() {
         const lines = ev.target.result.trim().split('\n')
         const parsed = lines.filter(l => /^\d+/.test(l.split(',')[0].trim())).map(line => {
           const p = line.split(',').map(s => s.trim())
-          const day = parseInt(p[0]), dow = p[1] || ''
-          const sales = parseFloat(p[2]) || 0
-          const customers = Math.round(sales * 1000 / 3000)
-          const avgSpend = customers > 0 ? Math.round(sales * 1000 / customers) : 3000
-          const orders = parseInt(p[4]) || Math.round(customers * 1.5)
-          return { day, dow, sales, customers, avgSpend, orders }
+          const day       = parseInt(p[0])
+          const dow       = p[1] || ''
+          const sales     = parseFloat(p[2]) || 0
+          const customers = parseInt(p[3]) || Math.round(sales * 1000 / 3000)
+          const avgSpend  = parseInt(p[4]) || (customers > 0 ? Math.round(sales * 1000 / customers) : 3000)
+          const orders    = parseInt(p[5]) || Math.round(customers * 1.5)
+          const laborCost = parseFloat(p[6]) || 0
+          // 人件比率(p[7])と人時生産性(p[8])は計算項目なので無視
+          return { day, dow, sales, customers, avgSpend, orders, laborCost }
         }).filter(d => d.day >= 1 && d.day <= 31)
         if (!parsed.length) { setCsvMsg('CSVの形式が正しくありません。'); setShowCsvModal(false); return }
         setTargets(prev => prev.map(d => { const f = parsed.find(p => p.day === d.day); return f ? { ...d, ...f } : d }))
@@ -142,6 +155,61 @@ export default function Targets() {
     reader.readAsText(pendingCsvFile, 'UTF-8')
     setShowCsvModal(false)
     setPendingCsvFile(null)
+  }
+
+  // ── 時間帯別売上パターン CSV ──
+  const PATTERN_HEADER_COLS = ['パターン','項目', ...PATTERN_HOURS.map(h => `${h}:00`), '合計']
+  const downloadPatternCsvFormat = () => {
+    const header = PATTERN_HEADER_COLS.join(',')
+    const rows = []
+    Object.entries(SALES_PATTERNS).forEach(([key, p]) => {
+      const total = Object.values(p.hourlySales).reduce((a, b) => a + b, 0)
+      const salesRow = [p.label, '売上(円)', ...PATTERN_HOURS.map(h => p.hourlySales[h] ?? 0), total]
+      const ratioRow = [p.label, '構成比(%)', ...PATTERN_HOURS.map(h => total > 0 ? ((p.hourlySales[h] ?? 0) / total * 100).toFixed(1) : '0.0'), '100.0']
+      rows.push(salesRow.join(','), ratioRow.join(','))
+    })
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'sales_patterns_format.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const executePatternCsvUpload = () => {
+    if (!pendingPatternCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const lines = ev.target.result.trim().split('\n').slice(1) // skip header
+        const labelToKey = Object.fromEntries(Object.entries(SALES_PATTERNS).map(([k, p]) => [p.label, k]))
+        const next = JSON.parse(JSON.stringify(patterns))
+        let count = 0
+        lines.forEach(line => {
+          const cols = line.split(',').map(s => s.trim())
+          if (cols.length < 3) return
+          const [label, kind, ...rest] = cols
+          const key = labelToKey[label]
+          if (!key) return
+          // 売上(円) 行のみ反映（構成比は計算項目なので無視）
+          if (!/売上/.test(kind)) return
+          PATTERN_HOURS.forEach((h, i) => {
+            const v = parseFloat(rest[i]) || 0
+            next[key].hourlySales[h] = v
+          })
+          count++
+        })
+        if (count === 0) { setPatternCsvMsg('CSVの形式が正しくありません。'); setShowPatternCsvModal(false); return }
+        setPatterns(next)
+        setPatternCsvMsg(`✓ ${count}パターン分のデータを読み込みました`)
+        setTimeout(() => setPatternCsvMsg(''), 3000)
+      } catch { setPatternCsvMsg('CSVの読み込みに失敗しました。') }
+    }
+    reader.readAsText(pendingPatternCsvFile, 'UTF-8')
+    setShowPatternCsvModal(false)
+    setPendingPatternCsvFile(null)
   }
 
   const updatePatternHour = (key, hour, value) => {
@@ -282,8 +350,8 @@ export default function Targets() {
       </div>
 
       {/* CSV hint */}
-      <div style={{ marginBottom:16, fontSize:12, color:'#94a3b8', background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 16px' }}>
-        CSVフォーマット: <code style={{ background:'#f0f5f9', padding:'1px 5px', borderRadius:4, fontFamily:'monospace' }}>日,曜日,売上(千円),客数,注文数</code>
+      <div style={{ marginBottom:16, fontSize:11.5, color:'#94a3b8', background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 16px', overflowX:'auto', whiteSpace:'nowrap' }}>
+        CSVフォーマット: <code style={{ background:'#f0f5f9', padding:'1px 5px', borderRadius:4, fontFamily:'monospace' }}>{TARGET_HEADER_COLS.join(',')}</code>
       </div>
 
       {/* Editable table */}
@@ -412,10 +480,18 @@ export default function Targets() {
 
       {/* ── 時間帯別売上パターン ── */}
       <div className="mgr-card" style={{ padding:'20px 20px 14px', marginTop:24 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:12, flexWrap:'wrap' }}>
           <div>
             <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>時間帯別売上パターン</h2>
             <p style={{ fontSize:11, color:'#94a3b8', marginTop:4, marginBottom:0 }}>5パターンの時間帯別売上を設定。シフト決定で各日にどのパターンを使うかを選択できます。</p>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            {patternCsvMsg && <span style={{ fontSize:12, color: patternCsvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{patternCsvMsg}</span>}
+            <button onClick={() => setShowPatternCsvModal(true)} className="mgr-btn-secondary">
+              CSV アップロード
+            </button>
+            <input ref={patternFileInputRef} type="file" accept=".csv" className="hidden"
+              onChange={e => { setPendingPatternCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
           </div>
         </div>
         <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
@@ -564,8 +640,9 @@ export default function Targets() {
               {/* Format download */}
               <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'14px 16px' }}>
                 <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
-                <div style={{ fontSize:11, color:'#64748b', marginBottom:10, lineHeight:1.6 }}>
-                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>日,曜日,売上(千円),客数,注文数</code>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:10, lineHeight:1.6, wordBreak:'break-all' }}>
+                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>{TARGET_HEADER_COLS.join(',')}</code>
+                  <div style={{ marginTop:4, fontSize:10.5, color:'#94a3b8' }}>※ 人件比率・人時生産性は計算項目のため自動的に再計算されます</div>
                 </div>
                 <button onClick={downloadCsvFormat} style={{
                   display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8,
@@ -602,6 +679,70 @@ export default function Targets() {
                 background: pendingCsvFile ? '#4f46e5' : '#c7d2fe',
                 color:'white', fontSize:13, fontWeight:600,
                 cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit',
+              }}>アップロードを実行</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pattern CSV Upload Modal ── */}
+      {showPatternCsvModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:520, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>時間帯別売上パターン CSV アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>5パターンの時間帯別売上をCSVファイルから読み込みます</div>
+              </div>
+              <button onClick={() => setShowPatternCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:18 }}>
+              {/* Format download */}
+              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'14px 16px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:10, lineHeight:1.6, wordBreak:'break-all' }}>
+                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>パターン,項目,9:00,10:00,…,22:00,合計</code>
+                  <div style={{ marginTop:4, fontSize:10.5, color:'#94a3b8' }}>
+                    1カラム目はパターン名（平日①/平日②/金曜/土曜/日祝）。<br />
+                    各パターンに「売上(円)」「構成比(%)」の2行が並びます。<br />
+                    ※ 構成比は計算項目のため自動的に再計算されます
+                  </div>
+                </div>
+                <button onClick={downloadPatternCsvFormat} style={{
+                  display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8,
+                  border:'1px solid #4f46e5', background:'white', color:'#4f46e5',
+                  fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+                }}>
+                  ↓ フォーマットをダウンロード
+                </button>
+              </div>
+              {/* File picker */}
+              <div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <button onClick={() => patternFileInputRef.current?.click()} style={{
+                    padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0',
+                    background:'#f8fafc', color:'#475569', fontSize:13, fontWeight:600,
+                    cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap',
+                  }}>
+                    ファイルを選択
+                  </button>
+                  <span style={{ fontSize:12, color: pendingPatternCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pendingPatternCsvFile ? pendingPatternCsvFile.name : 'ファイルが選択されていません'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:'14px 24px', borderTop:'1px solid #e2e8f0', display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={() => { setShowPatternCsvModal(false); setPendingPatternCsvFile(null) }} style={{
+                padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white',
+                color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+              }}>キャンセル</button>
+              <button onClick={executePatternCsvUpload} disabled={!pendingPatternCsvFile} style={{
+                padding:'9px 18px', borderRadius:8, border:'none',
+                background: pendingPatternCsvFile ? '#4f46e5' : '#c7d2fe',
+                color:'white', fontSize:13, fontWeight:600,
+                cursor: pendingPatternCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit',
               }}>アップロードを実行</button>
             </div>
           </div>
