@@ -470,10 +470,10 @@ export default function ShiftDecision() {
   const sH2 = { position: 'sticky', left: LW + STW,  zIndex: 15 }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', padding:'20px 24px 16px', background:'#f0f5f9', gap:12 }}>
+    <div style={{ padding:'20px 24px 16px', background:'#f0f5f9', display:'flex', flexDirection:'column', gap:12 }}>
 
       {/* ── Header ── */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10, flexShrink:0 }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
         <div>
           <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
             <button
@@ -511,7 +511,7 @@ export default function ShiftDecision() {
       </div>
 
       {/* ── Period + View mode + Print ── */}
-      <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:10, flexShrink:0 }}>
+      <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:10 }}>
         {/* Left: 期間 toggle (only meaningful for half view) */}
         {viewMode === 'half' && (
           <div style={{ display:'flex', gap:6, alignItems:'center' }}>
@@ -559,40 +559,8 @@ export default function ShiftDecision() {
         </div>
       </div>
 
-      {/* ── 表示設定 (display items checkboxes) ── */}
-      <div style={{ flexShrink:0, background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 12px' }}>
-        <button onClick={() => setShowDisplayPanel(v => !v)} style={{
-          background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit',
-          fontSize:12, fontWeight:600, color:'#475569', display:'flex', alignItems:'center', gap:4,
-        }}>
-          <span style={{ fontSize:10, color:'#64748b' }}>{showDisplayPanel ? '▼' : '▶'}</span>
-          表示設定
-          <span style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginLeft:4 }}>※ 各表示項目における合計値は下書きシフトと確定シフトの合計となります。</span>
-        </button>
-        {showDisplayPanel && (
-          <div style={{ marginTop:8, display:'flex', flexWrap:'wrap', gap:'6px 16px', fontSize:12 }}>
-            {[
-              { k:'salesPlan',      l:'売上予算' },
-              { k:'salesActual',    l:'売上ACTUAL' },
-              { k:'requiredStaff',  l:'必要人数' },
-              { k:'assignedStaff',  l:'シフト人数' },
-              { k:'skillBreakdown', l:'スキル別人員' },
-              { k:'totalTime',      l:'合計時間' },
-              { k:'specialTasks',   l:'業務内容' },
-              { k:'workSummary',    l:'労働時間' },
-              { k:'paySummary',     l:'概算人件費' },
-            ].map(({ k, l }) => (
-              <label key={k} style={{ display:'flex', alignItems:'center', gap:5, cursor:'pointer', userSelect:'none' }}>
-                <input type="checkbox" checked={displayItems[k]} onChange={() => toggleDisplay(k)} style={{ accentColor:'#4f46e5' }} />
-                <span style={{ color: displayItems[k] ? '#0f172a' : '#94a3b8' }}>{l}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* ── Day selector ── */}
-      <div style={{ display:'flex', gap:4, overflowX:'auto', paddingBottom:2, flexShrink:0 }}>
+      <div style={{ display:'flex', gap:4, overflowX:'auto', paddingBottom:2, }}>
         {visibleDays.map(d => (
           <button key={d.day} onClick={() => setSelectedDay(d.day)} style={{
             flexShrink:0, width:44, padding:'5px 0', borderRadius:7, border:'none', cursor:'pointer',
@@ -606,7 +574,7 @@ export default function ShiftDecision() {
       </div>
 
       {/* ── Daily pattern selector ── */}
-      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', flexShrink:0 }}>
+      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', }}>
         <span style={{ fontSize:12, color:'#64748b' }}>{selectedDay}日のパターン:</span>
         {Object.entries(SALES_PATTERNS).map(([key, p]) => {
           const on = currentPatternKey === key
@@ -626,7 +594,7 @@ export default function ShiftDecision() {
 
       {/* ── Special task toggles (per-day) ── */}
       {displayItems.specialTasks && (
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-start', flexShrink:0 }}>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-start', }}>
         <span style={{ fontSize:12, color:'#64748b', paddingTop:6 }}>特別業務:</span>
         {effectiveTasks.map(t => {
           const isEditing = editDayTask === t.id
@@ -673,8 +641,40 @@ export default function ShiftDecision() {
       </div>
       )}
 
+      {/* ── 表示設定 (display items checkboxes) ── */}
+      <div style={{ background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 12px' }}>
+        <button onClick={() => setShowDisplayPanel(v => !v)} style={{
+          background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit',
+          fontSize:12, fontWeight:600, color:'#475569', display:'flex', alignItems:'center', gap:4,
+        }}>
+          <span style={{ fontSize:10, color:'#64748b' }}>{showDisplayPanel ? '▼' : '▶'}</span>
+          表示設定
+          <span style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginLeft:4 }}>※ 各表示項目における合計値は下書きシフトと確定シフトの合計となります。</span>
+        </button>
+        {showDisplayPanel && (
+          <div style={{ marginTop:8, display:'flex', flexWrap:'wrap', gap:'6px 16px', fontSize:12 }}>
+            {[
+              { k:'salesPlan',      l:'売上予算' },
+              { k:'salesActual',    l:'売上ACTUAL' },
+              { k:'requiredStaff',  l:'必要人数' },
+              { k:'assignedStaff',  l:'シフト人数' },
+              { k:'skillBreakdown', l:'スキル別人員' },
+              { k:'totalTime',      l:'合計時間' },
+              { k:'specialTasks',   l:'業務内容' },
+              { k:'workSummary',    l:'労働時間' },
+              { k:'paySummary',     l:'概算人件費' },
+            ].map(({ k, l }) => (
+              <label key={k} style={{ display:'flex', alignItems:'center', gap:5, cursor:'pointer', userSelect:'none' }}>
+                <input type="checkbox" checked={displayItems[k]} onChange={() => toggleDisplay(k)} style={{ accentColor:'#4f46e5' }} />
+                <span style={{ color: displayItems[k] ? '#0f172a' : '#94a3b8' }}>{l}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ── Main grid ── */}
-      <div style={{ flex:1, minHeight:0, overflowX:'auto', overflowY:'auto', background:'white', border:B, borderRadius:10, boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
+      <div style={{ overflowX:'auto', background:'white', border:B, borderRadius:10, boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
         <table style={{ borderCollapse:'collapse', tableLayout:'fixed', minWidth:'max-content', fontSize:11, fontVariantNumeric:'tabular-nums' }}>
           <colgroup>
             <col style={{ width:LW }} />
@@ -862,7 +862,7 @@ export default function ShiftDecision() {
 
 
       {/* ── Legend ── */}
-      <div style={{ display:'flex', gap:16, fontSize:10, color:'var(--pita-muted)', flexWrap:'wrap', flexShrink:0 }}>
+      <div style={{ display:'flex', gap:16, fontSize:10, color:'var(--pita-muted)', flexWrap:'wrap', }}>
         {[
           { bg:'#818cf8',              color:'white',   label:'配置済み（クリックで解除）' },
           { bg:'#e0e7ff',              color:'#6366f1', label:'出勤中・未配置（クリックで配置）', border:B },
