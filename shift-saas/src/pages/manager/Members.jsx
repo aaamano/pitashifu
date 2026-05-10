@@ -38,10 +38,58 @@ const retentionCls = (p) => {
   return 'bg-gray-100 text-gray-500 border border-gray-200'
 }
 
-const BLANK_MEMBER     = { id: null, name: '', type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7, wage: 1050, transitPerDay: 0 }
+const PREFECTURES = [
+  '北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県',
+  '茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県',
+  '新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県',
+  '滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県',
+  '鳥取県','島根県','岡山県','広島県','山口県',
+  '徳島県','香川県','愛媛県','高知県',
+  '福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県',
+]
+
+const DOW_KEYS = [
+  { k:'mon', l:'月' },
+  { k:'tue', l:'火' },
+  { k:'wed', l:'水' },
+  { k:'thu', l:'木' },
+  { k:'fri', l:'金' },
+  { k:'sat', l:'土' },
+  { k:'sun', l:'日' },
+]
+
+const HOUR_TIMES = (() => {
+  const arr = []
+  for (let h = 9; h <= 23; h++) {
+    arr.push(`${h}:00`)
+    if (h < 23) arr.push(`${h}:30`)
+  }
+  return arr
+})()
+
+const blankFixedShift = () => DOW_KEYS.reduce((o, { k }) => {
+  o[k] = { enabled: false, start: '13:00', end: '18:00' }
+  return o
+}, {})
+
+const BLANK_MEMBER = {
+  id: null, name: '', type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7, wage: 1050, transitPerDay: 0,
+  // 氏名・表示
+  lastName: '', firstName: '', lastNameKana: '', firstNameKana: '', displayName: '', shiftMemo: '',
+  group: '',
+  // 固定シフト
+  fixedShift: blankFixedShift(),
+  // 連携・属性
+  linked: false,
+  gender: '',
+  // 連絡先・住所
+  phone: '', email: '', postalCode: '', prefecture: '', city: '', streetAddress: '', buildingName: '',
+  // 管理
+  staffCode: '', memo: '',
+}
 const BLANK_CONSTRAINT = { incompatible: [], targetEarnings: 0, retentionPriority: 5 }
 
-const MODAL_TABS = ['基本情報', 'マネージャー設定']
+const MODAL_TABS = ['基本情報', '連絡先・住所', '固定シフト', 'マネージャー設定']
 
 export default function Members() {
   const [members,         setMembers]         = useState(initialStaff)
@@ -123,22 +171,32 @@ export default function Members() {
   )
 
   const openEdit = (m) => {
-    setForm(m)
+    const parts = (m.name || '').split(/\s+/).filter(Boolean)
+    setForm({
+      ...BLANK_MEMBER,
+      ...m,
+      lastName:  m.lastName  ?? parts[0] ?? '',
+      firstName: m.firstName ?? parts[1] ?? '',
+      fixedShift: m.fixedShift || blankFixedShift(),
+    })
     setConstraintForm(constraints[m.id] || BLANK_CONSTRAINT)
     setActiveTab(0)
     setShowModal(true)
   }
   const openNew = () => {
-    setForm(BLANK_MEMBER)
+    setForm({ ...BLANK_MEMBER, fixedShift: blankFixedShift() })
     setConstraintForm(BLANK_CONSTRAINT)
     setActiveTab(0)
     setShowModal(true)
   }
 
   const handleSave = () => {
-    if (!form.name.trim()) return
+    const composedName = (form.lastName || form.firstName)
+      ? `${form.lastName || ''}${form.lastName && form.firstName ? ' ' : ''}${form.firstName || ''}`.trim()
+      : form.name
+    if (!composedName.trim()) return
     const id = form.id || (members.length + 100)
-    const saved = { ...form, id }
+    const saved = { ...form, id, name: composedName }
     if (form.id) setMembers(prev => prev.map(m => m.id === form.id ? saved : m))
     else         setMembers(prev => [...prev, saved])
     setConstraints(prev => ({ ...prev, [id]: constraintForm }))
@@ -397,13 +455,13 @@ export default function Members() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-200 px-6">
+            <div className="flex border-b border-gray-200 px-6 overflow-x-auto">
               {MODAL_TABS.map((tab, i) => (
                 <button key={tab} onClick={() => setActiveTab(i)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors mr-2 ${
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors mr-2 whitespace-nowrap ${
                     activeTab === i ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
                   }`}>
-                  {i === 1 ? (
+                  {i === 3 ? (
                     <span className="flex items-center gap-1.5">
                       {tab}
                       <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">非公開</span>
@@ -418,11 +476,69 @@ export default function Members() {
               {/* ── Tab 0: 基本情報 ── */}
               {activeTab === 0 && (
                 <>
+                  {/* 氏名 */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">名前 *</label>
-                    <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" placeholder="例：田中 太郎" />
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                      氏名 <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded ml-1 align-middle">必須</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input value={form.lastName}  onChange={e => setForm(p => ({ ...p, lastName:  e.target.value }))} placeholder="姓 (例: 天野)"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <input value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} placeholder="名 (例: 彰)"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
                   </div>
+                  {/* フリガナ */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">フリガナ</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input value={form.lastNameKana}  onChange={e => setForm(p => ({ ...p, lastNameKana:  e.target.value }))} placeholder="セイ (例: アマノ)"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <input value={form.firstNameKana} onChange={e => setForm(p => ({ ...p, firstNameKana: e.target.value }))} placeholder="メイ (例: アキラ)"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                  </div>
+                  {/* 表示名・シフト表補足 */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">表示名</label>
+                      <input value={form.displayName} onChange={e => setForm(p => ({ ...p, displayName: e.target.value }))} placeholder="例: 天野彰1"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">シフト表補足 <span className="text-[10px] text-gray-400">最大8文字</span></label>
+                      <input value={form.shiftMemo} maxLength={8} onChange={e => setForm(p => ({ ...p, shiftMemo: e.target.value }))} placeholder="例: AM早番"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                  </div>
+
+                  {/* 時給・交通費 */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">時給（円）</label>
+                      <input type="number" value={form.wage} onChange={e => setForm(p => ({ ...p, wage: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">交通費 (円/日)</label>
+                      <input type="number" value={form.transitPerDay ?? 0} onChange={e => setForm(p => ({ ...p, transitPerDay: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">時間生産性（件/h）</label>
+                      <input type="number" value={form.hourlyOrders} onChange={e => setForm(p => ({ ...p, hourlyOrders: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                    </div>
+                  </div>
+
+                  {/* グループ */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">グループ</label>
+                    <input value={form.group} onChange={e => setForm(p => ({ ...p, group: e.target.value }))} placeholder="例: ホール / キッチン"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+
+                  {/* 雇用形態 / 役職 */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">雇用形態</label>
@@ -440,6 +556,8 @@ export default function Members() {
                       </select>
                     </div>
                   </div>
+
+                  {/* スキル */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-2">スキル</label>
                     <div className="flex gap-3 flex-wrap">
@@ -451,28 +569,167 @@ export default function Members() {
                       ))}
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1">時間生産性（件/時間）</label>
-                      <input type="number" value={form.hourlyOrders} onChange={e => setForm(p => ({ ...p, hourlyOrders: Number(e.target.value) }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+
+                  {/* 連携状態 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">連携状態</label>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-sm font-semibold ${form.linked ? 'text-emerald-600' : 'text-gray-400'}`}>
+                        {form.linked ? '✓ 連携済み' : '未連携'}
+                      </span>
+                      <button type="button" onClick={() => setForm(p => ({ ...p, linked: !p.linked }))}
+                        className="text-xs text-blue-600 hover:underline">
+                        {form.linked ? '連携を解除する' : '連携する'}
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1">時給（円）</label>
-                      <input type="number" value={form.wage} onChange={e => setForm(p => ({ ...p, wage: Number(e.target.value) }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1">交通費（円/日）</label>
-                      <input type="number" value={form.transitPerDay ?? 0} onChange={e => setForm(p => ({ ...p, transitPerDay: Number(e.target.value) }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+
+                  {/* 性別 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-2">性別</label>
+                    <div className="flex gap-4">
+                      {['男性','女性','その他'].map(g => (
+                        <label key={g} className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="radio" name="gender" value={g} checked={form.gender === g}
+                            onChange={() => setForm(p => ({ ...p, gender: g }))}
+                            className="accent-blue-600" />
+                          <span className="text-sm text-gray-700">{g}</span>
+                        </label>
+                      ))}
                     </div>
                   </div>
                 </>
               )}
 
-              {/* ── Tab 1: マネージャー設定 ── */}
+              {/* ── Tab 1: 連絡先・住所 ── */}
               {activeTab === 1 && (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">電話番号 <span className="text-[10px] text-gray-400 ml-1">ハイフン不要</span></label>
+                    <input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value.replace(/[^\d]/g, '') }))} placeholder="08079334104"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">メールアドレス <span className="text-[10px] text-gray-400 ml-1">半角英数字または記号</span></label>
+                    <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="example@gmail.com"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">郵便番号 <span className="text-[10px] text-gray-400 ml-1">ハイフン不要</span></label>
+                    <input value={form.postalCode} maxLength={7} onChange={e => setForm(p => ({ ...p, postalCode: e.target.value.replace(/[^\d]/g, '') }))} placeholder="1010031"
+                      className="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">都道府県</label>
+                    <select value={form.prefecture} onChange={e => setForm(p => ({ ...p, prefecture: e.target.value }))}
+                      className="w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400">
+                      <option value="">選択してください</option>
+                      {PREFECTURES.map(pf => <option key={pf} value={pf}>{pf}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">市区町村郡 <span className="text-[10px] text-gray-400 ml-1">最大20文字</span></label>
+                    <input value={form.city} maxLength={20} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="千代田区"
+                      className="w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">町名番地 <span className="text-[10px] text-gray-400 ml-1">最大20文字</span></label>
+                    <input value={form.streetAddress} maxLength={20} onChange={e => setForm(p => ({ ...p, streetAddress: e.target.value }))} placeholder="東神田2-9-12"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">ビル名等 <span className="text-[10px] text-gray-400 ml-1">最大20文字</span></label>
+                    <input value={form.buildingName} maxLength={20} onChange={e => setForm(p => ({ ...p, buildingName: e.target.value }))} placeholder="例: テスト1011"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">スタッフコード</label>
+                    <input value={form.staffCode} onChange={e => setForm(p => ({ ...p, staffCode: e.target.value }))} placeholder="任意"
+                      className="w-56 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">メモ</label>
+                    <textarea value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))} rows={3}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  </div>
+                </>
+              )}
+
+              {/* ── Tab 2: 固定シフト ── */}
+              {activeTab === 2 && (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
+                    固定シフトを設定すると、毎月の月初めに3ヶ月分のシフト下書きが作成されます。
+                  </div>
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="grid grid-cols-[40px_1fr] bg-gray-100 border-b border-gray-200 text-[11px] text-gray-600 font-semibold">
+                      <div className="px-2 py-1.5 text-center">曜日</div>
+                      <div className="grid" style={{ gridTemplateColumns: `repeat(${HOUR_TIMES.length / 2}, 1fr)` }}>
+                        {Array.from({ length: HOUR_TIMES.length / 2 }, (_, i) => 9 + i).map(h => (
+                          <div key={h} className="px-1 py-1.5 text-center border-l border-gray-200">{h}</div>
+                        ))}
+                      </div>
+                    </div>
+                    {DOW_KEYS.map(({ k, l }) => {
+                      const fs = form.fixedShift[k] || { enabled:false, start:'13:00', end:'18:00' }
+                      const startMin = parseInt(fs.start.split(':')[0])*60 + parseInt(fs.start.split(':')[1])
+                      const endMin   = parseInt(fs.end  .split(':')[0])*60 + parseInt(fs.end  .split(':')[1])
+                      const dayStart = 9*60, dayEnd = 23*60
+                      const leftPct  = Math.max(0, (startMin - dayStart) / (dayEnd - dayStart) * 100)
+                      const widthPct = Math.max(0, (endMin   - startMin) / (dayEnd - dayStart) * 100)
+                      return (
+                        <div key={k} className="grid grid-cols-[40px_1fr] border-b border-gray-100 items-stretch">
+                          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-700 border-r border-gray-100">{l}</div>
+                          <div className="relative h-9 bg-white">
+                            <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${HOUR_TIMES.length / 2}, 1fr)` }}>
+                              {Array.from({ length: HOUR_TIMES.length / 2 }).map((_, i) => (
+                                <div key={i} className="border-l border-gray-100" />
+                              ))}
+                            </div>
+                            {fs.enabled && widthPct > 0 && (
+                              <div title={`${fs.start} - ${fs.end}`} style={{
+                                position:'absolute', left:`${leftPct}%`, width:`${widthPct}%`,
+                                top:4, bottom:4, background:'#bfdbfe', border:'1px solid #60a5fa', borderRadius:4,
+                                display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#1e3a8a', fontWeight:600,
+                              }}>
+                                {fs.start} - {fs.end}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {/* per-day controls */}
+                  <div className="grid gap-2">
+                    {DOW_KEYS.map(({ k, l }) => {
+                      const fs = form.fixedShift[k] || { enabled:false, start:'13:00', end:'18:00' }
+                      const update = (patch) => setForm(p => ({ ...p, fixedShift: { ...p.fixedShift, [k]: { ...fs, ...patch } } }))
+                      return (
+                        <div key={k} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-lg">
+                          <span className="w-6 text-center text-sm font-semibold text-gray-700">{l}</span>
+                          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                            <input type="checkbox" checked={fs.enabled} onChange={e => update({ enabled: e.target.checked })} className="accent-blue-600" />
+                            <span>出勤</span>
+                          </label>
+                          <select value={fs.start} disabled={!fs.enabled} onChange={e => update({ start: e.target.value })}
+                            className="border border-gray-300 rounded px-2 py-1 text-xs outline-none disabled:bg-gray-50 disabled:text-gray-400">
+                            {HOUR_TIMES.map(t => <option key={t}>{t}</option>)}
+                          </select>
+                          <span className="text-gray-400 text-xs">〜</span>
+                          <select value={fs.end} disabled={!fs.enabled} onChange={e => update({ end: e.target.value })}
+                            className="border border-gray-300 rounded px-2 py-1 text-xs outline-none disabled:bg-gray-50 disabled:text-gray-400">
+                            {HOUR_TIMES.map(t => <option key={t}>{t}</option>)}
+                          </select>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* ── Tab 3: マネージャー設定 ── */}
+              {activeTab === 3 && (
                 <>
                   <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
                     <span className="text-orange-500 text-lg mt-0.5">🔒</span>
@@ -563,8 +820,21 @@ export default function Members() {
               )}
             </div>
 
-            <div className="px-6 py-4 border-t flex gap-3 justify-between">
-              <div className="text-xs text-gray-400 self-center">* 必須項目</div>
+            <div className="px-6 py-4 border-t flex gap-3 justify-between flex-wrap">
+              <div className="flex items-center gap-3">
+                {form.id && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`${form.lastName || form.name || 'このスタッフ'} を退職させますか？`)) {
+                        setMembers(prev => prev.filter(m => m.id !== form.id))
+                        setShowModal(false)
+                      }
+                    }}
+                    className="text-xs text-red-600 hover:underline"
+                  >スタッフを退職させる</button>
+                )}
+                <span className="text-xs text-gray-400">* 必須項目</span>
+              </div>
               <div className="flex gap-3">
                 <button onClick={() => setShowModal(false)} className="mgr-btn-secondary">キャンセル</button>
                 <button onClick={handleSave} className="mgr-btn-primary">保存する</button>
