@@ -107,8 +107,26 @@ export default function Members() {
   const [pendingCsvFile, setPendingCsvFile] = useState(null)
   const [csvMsg,         setCsvMsg]         = useState('')
   const fileInputRef = useRef(null)
+  // Airレジ等の他フォーマット
+  const [pendingAltCsvFile, setPendingAltCsvFile] = useState(null)
+  const [altCsvFormat,      setAltCsvFormat]      = useState('airreji')
+  const altFileInputRef = useRef(null)
 
   const MEMBER_CSV_HEADER = ['スタッフ名','雇用形態','役職','スキル(;区切り)','時給(円)','交通費/日(円)','残留優先度']
+
+  // 簡易CSVパーサ（クォート対応）
+  const parseCsvLine = (line) => {
+    const out = []
+    let cur = '', inQ = false
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]
+      if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++ } else { inQ = !inQ } }
+      else if (c === ',' && !inQ) { out.push(cur); cur = '' }
+      else cur += c
+    }
+    out.push(cur)
+    return out.map(s => s.trim())
+  }
 
   const downloadMemberCsv = () => {
     const labelToKey = Object.fromEntries(Object.entries(skillLabels).map(([k, v]) => [v, k]))
@@ -164,6 +182,85 @@ export default function Members() {
     reader.readAsText(pendingCsvFile, 'UTF-8')
     setShowCsvModal(false)
     setPendingCsvFile(null)
+  }
+
+  // Airレジ「スタッフ管理」CSV → 内部形式に変換してインポート
+  const executeAirrejiMemberUpload = () => {
+    if (!pendingAltCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result.replace(/^﻿/, '').trim()
+        const lines = text.split(/\r?\n/).filter(l => l.trim())
+        if (lines.length < 2) { setCsvMsg('CSVが空です。'); setShowCsvModal(false); return }
+        const dataLines = lines.slice(1)
+        const next = [...members]
+        let added = 0, updated = 0, skipped = 0
+        dataLines.forEach(line => {
+          const cols = parseCsvLine(line)
+          if (cols.length < 25) return
+          // No=0, 姓=1, 名=2, 姓ｶﾅ=3, 名ｶﾅ=4, ﾆｯｸ=5, 性別=6, 〒=7, 都道府=8, 市以降=9,
+          // 電話=10, mail=11, ｸﾞﾙｰﾌﾟ=12, 月-日=13-19, 連携=20, ｽﾃｰﾀｽ=21, 登録=22, 退職=23,
+          // 時給=24, 交通=25, ｺｰﾄﾞ=26, ﾒﾓ=27, ｼﾌﾄ表補足=28
+          const lastName  = cols[1]
+          const firstName = cols[2]
+          if (!lastName && !firstName) return
+          if (cols[23] && cols[23].trim()) { skipped++; return } // 退職日時あり
+          const fullName = `${lastName} ${firstName}`.replace(/\s+/g, ' ').trim()
+          // 固定シフト: "9:00-18:00" 形式
+          const fixedShift = blankFixedShift()
+          DOW_KEYS.forEach((d, i) => {
+            const range = (cols[13 + i] || '').replace(/[\s　]/g, '')
+            const m = range.match(/^(\d{1,2}:\d{2})[〜~\-－—]+(\d{1,2}:\d{2})$/)
+            if (m) fixedShift[d.k] = { enabled: true, start: m[1], end: m[2] }
+          })
+          const obj = {
+            ...BLANK_MEMBER,
+            lastName, firstName, name: fullName,
+            lastNameKana:  cols[3] || '',
+            firstNameKana: cols[4] || '',
+            displayName:   cols[5] || '',
+            gender:        cols[6] || '',
+            postalCode:    (cols[7] || '').replace(/-/g, ''),
+            prefecture:    cols[8] || '',
+            city:          cols[9] || '',
+            phone:         (cols[10] || '').replace(/-/g, ''),
+            email:         cols[11] || '',
+            group:         cols[12] || '',
+            fixedShift,
+            linked:        cols[20] === '済',
+            wage:          parseInt(cols[24]) || 1050,
+            transitPerDay: parseInt(cols[25]) || 0,
+            staffCode:     cols[26] || '',
+            memo:          cols[27] || '',
+            shiftMemo:     cols[28] || '',
+            type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7,
+          }
+          const idx = next.findIndex(m => m.name === fullName)
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], ...obj, id: next[idx].id }
+            updated++
+          } else {
+            obj.id = (next.reduce((mx, m) => Math.max(mx, m.id || 0), 0) || 100) + 1
+            next.push(obj)
+            added++
+          }
+        })
+        if (added + updated === 0) {
+          setCsvMsg(skipped > 0 ? `すべて退職済 (${skipped}件) のためスキップしました` : 'Airレジ形式から有効な行が見つかりませんでした')
+          setShowCsvModal(false); return
+        }
+        setMembers(next)
+        const msg = `✓ Airレジ取込: 新規${added}名 / 更新${updated}名` + (skipped ? ` / 退職スキップ${skipped}件` : '')
+        setCsvMsg(msg)
+        setTimeout(() => setCsvMsg(''), 4000)
+      } catch (err) {
+        setCsvMsg('Airレジ CSV の読み込みに失敗しました')
+      }
+    }
+    reader.readAsText(pendingAltCsvFile, 'UTF-8')
+    setShowCsvModal(false)
+    setPendingAltCsvFile(null)
   }
 
   const filtered = members.filter(m =>
@@ -406,7 +503,7 @@ export default function Members() {
       {/* ── CSV Upload Modal ── */}
       {showCsvModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:500, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
             <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
                 <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>メンバー CSV アップロード</div>
@@ -414,32 +511,76 @@ export default function Members() {
               </div>
               <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
             </div>
-            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:18 }}>
-              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'14px 16px' }}>
-                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
-                <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6 }}>
-                  CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>スタッフ名,雇用形態,役職,スキル(;区切り),時給(円),交通費/日(円),残留優先度,1日〜30日</code>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:20, overflowY:'auto' }}>
+
+              {/* ── Section 1: ピタシフのフォーマット ── */}
+              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'16px 18px' }}>
+                <div style={{ fontSize:14, fontWeight:700, color:'#0f172a', marginBottom:14 }}>
+                  ピタシフのフォーマットを使う場合
                 </div>
-                <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>スキルはバリスタ;レジ;フロア の形式。スタッフ名で既存レコードを照合します。</div>
-                <button onClick={downloadMemberCsv} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
-                  ↓ フォーマットをダウンロード
-                </button>
-              </div>
-              <div>
-                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <button onClick={() => fileInputRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'#f8fafc', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
-                    ファイルを選択
+                {/* ① */}
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
+                  <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6 }}>
+                    CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>スタッフ名,雇用形態,役職,スキル(;区切り),時給(円),交通費/日(円),残留優先度,1日〜30日</code>
+                  </div>
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>スキルはバリスタ;レジ;フロア の形式。スタッフ名で既存レコードを照合します。</div>
+                  <button onClick={downloadMemberCsv} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                    ↓ フォーマットをダウンロード
                   </button>
-                  <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
-                  </span>
                 </div>
+                {/* ② */}
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <button onClick={() => fileInputRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                      ファイルを選択
+                    </button>
+                    <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={executeMemberCsvUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+              </div>
+
+              {/* ── Section 2: 別フォーマット ── */}
+              <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:12, padding:'16px 18px' }}>
+                <div style={{ fontSize:14, fontWeight:700, color:'#0f172a', marginBottom:14 }}>
+                  別のフォーマットでアップロード
+                </div>
+                {/* ① */}
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>① フォーマットを選択</div>
+                  <select value={altCsvFormat} onChange={e => setAltCsvFormat(e.target.value)} style={{
+                    padding:'8px 12px', borderRadius:8, border:'1px solid #fed7aa', background:'white',
+                    fontSize:13, fontWeight:600, color:'#334155', cursor:'pointer', fontFamily:'inherit', minWidth:160,
+                  }}>
+                    <option value="airreji">Airレジ</option>
+                  </select>
+                  <div style={{ fontSize:10.5, color:'#9a3412', marginTop:6, lineHeight:1.5 }}>
+                    {altCsvFormat === 'airreji' && 'Airレジ「スタッフ管理」CSVをそのままアップロードできます。氏名・連絡先・固定シフト等を取り込み、ピタシフ形式に変換して反映します。'}
+                  </div>
+                </div>
+                {/* ② */}
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <button onClick={() => altFileInputRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #fed7aa', background:'white', color:'#9a3412', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                      ファイルを選択
+                    </button>
+                    <input ref={altFileInputRef} type="file" accept=".csv" className="hidden"
+                      onChange={e => { setPendingAltCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
+                    <span style={{ fontSize:12, color: pendingAltCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {pendingAltCsvFile ? pendingAltCsvFile.name : 'ファイルが選択されていません'}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={executeAirrejiMemberUpload} disabled={!pendingAltCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingAltCsvFile ? '#ea580c' : '#fed7aa', color:'white', fontSize:13, fontWeight:600, cursor: pendingAltCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
               </div>
             </div>
             <div style={{ padding:'14px 24px', borderTop:'1px solid #e2e8f0', display:'flex', gap:8, justifyContent:'flex-end' }}>
-              <button onClick={() => { setShowCsvModal(false); setPendingCsvFile(null) }} style={{ padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>キャンセル</button>
-              <button onClick={executeMemberCsvUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+              <button onClick={() => { setShowCsvModal(false); setPendingCsvFile(null); setPendingAltCsvFile(null) }} style={{ padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>閉じる</button>
             </div>
           </div>
         </div>

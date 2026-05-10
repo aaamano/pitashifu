@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   staff, daysConfig, shiftData, assignedShifts, YEAR_MONTH,
@@ -108,6 +108,15 @@ export default function ShiftDecision() {
   const [showPublish,   setShowPublish]  = useState(false)
   const [publishEndDay, setPublishEndDay] = useState(15)
   const [published,     setPublished]    = useState(false)
+  // CSV upload
+  const [showCsvModal,       setShowCsvModal]       = useState(false)
+  const [pendingCsvFile,     setPendingCsvFile]     = useState(null)
+  const [pendingAltCsvFile,  setPendingAltCsvFile]  = useState(null)
+  const [altCsvFormat,       setAltCsvFormat]       = useState('airreji')
+  const [csvMsg,             setCsvMsg]             = useState('')
+  const [shiftDataVersion,   setShiftDataVersion]   = useState(0) // bump to force re-render after mutating shiftData
+  const csvFileRef    = useRef(null)
+  const csvAltFileRef = useRef(null)
 
   const handleSaveDraft = () => {
     setShiftStatus('draft')
@@ -122,6 +131,141 @@ export default function ShiftDecision() {
   const handlePublish = () => {
     setPublished(true)
     setShowPublish(false)
+  }
+
+  // ── CSV upload helpers ────────────────────────────────────────────────────
+  const parseCsvLine = (line) => {
+    const out = []
+    let cur = '', inQ = false
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]
+      if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++ } else { inQ = !inQ } }
+      else if (c === ',' && !inQ) { out.push(cur); cur = '' }
+      else cur += c
+    }
+    out.push(cur)
+    return out.map(s => s.trim())
+  }
+
+  // 時刻 "9:00" → 数値時 9
+  const parseHour = (s) => {
+    if (!s) return null
+    const m = s.match(/^(\d{1,2}):(\d{2})$/)
+    if (!m) return null
+    return parseInt(m[1]) + parseInt(m[2]) / 60
+  }
+  // 数値時 → "h-h2" 形式 (整数が望ましいが半時間も対応)
+  const fmtRange = (start, end) => {
+    const f = (h) => Number.isInteger(h) ? `${h}` : `${h}`
+    return `${f(start)}-${f(end)}`
+  }
+
+  // 日付 "2026/5/14" → 月内の日 (1-31)。年月不一致の場合は無視
+  const parseDayFromDate = (s) => {
+    if (!s) return null
+    const m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/) || s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (!m) return null
+    return parseInt(m[3])
+  }
+
+  // ピタシフ形式: 日にち,曜日,氏名,開始時間,終了時間
+  const PITASHIFT_SHIFT_HEADER = ['日にち','曜日','氏名','開始時間','終了時間']
+
+  const downloadShiftCsvFormat = () => {
+    const header = PITASHIFT_SHIFT_HEADER.join(',')
+    const rows = []
+    daysConfig.forEach(d => {
+      staff.forEach(s => {
+        const code = shiftData[s.id]?.[d.day - 1]
+        if (!code || code === 'X') return
+        const t = parseShiftTimes(code)
+        if (!t) return
+        const fmt = (h) => `${Math.floor(h)}:${String(Math.round((h - Math.floor(h)) * 60)).padStart(2, '0')}`
+        rows.push([`2026/4/${d.day}`, d.dow, s.name, fmt(t.start), fmt(t.end)].join(','))
+      })
+    })
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `shifts_${currentVersion.id || 'v1'}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // 共通: 行 [date, name, start, end] の配列 → shiftData にマージ
+  const applyShiftRows = (rows) => {
+    let count = 0, unmatched = 0
+    rows.forEach(({ day, name, start, end }) => {
+      const sm = staff.find(s => s.name === name || s.name.replace(/\s+/g, '') === name.replace(/\s+/g, ''))
+      if (!sm) { unmatched++; return }
+      if (day < 1 || day > daysConfig.length) return
+      const sH = parseHour(start), eH = parseHour(end)
+      if (sH == null || eH == null) return
+      // 既存行を確保
+      if (!shiftData[sm.id]) shiftData[sm.id] = Array.from({ length: daysConfig.length }, () => 'X')
+      shiftData[sm.id][day - 1] = fmtRange(sH, eH)
+      count++
+    })
+    if (count) setShiftDataVersion(v => v + 1)
+    return { count, unmatched }
+  }
+
+  const executePitashiftShiftUpload = () => {
+    if (!pendingCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result.replace(/^﻿/, '').trim()
+        const lines = text.split(/\r?\n/).filter(l => l.trim()).slice(1)
+        const rows = []
+        lines.forEach(line => {
+          const c = parseCsvLine(line)
+          if (c.length < 5) return
+          const day  = parseDayFromDate(c[0])
+          const name = c[2]
+          const start = c[3], end = c[4]
+          if (day && name && start && end) rows.push({ day, name, start, end })
+        })
+        const { count, unmatched } = applyShiftRows(rows)
+        if (count === 0) { setCsvMsg('CSVの形式が正しくないか、有効な行がありませんでした。'); setShowCsvModal(false); return }
+        setCsvMsg(`✓ ${count}件のシフトを取り込みました` + (unmatched ? ` (未マッチ ${unmatched}件)` : ''))
+        setTimeout(() => setCsvMsg(''), 4000)
+      } catch { setCsvMsg('CSVの読み込みに失敗しました') }
+    }
+    reader.readAsText(pendingCsvFile, 'UTF-8')
+    setShowCsvModal(false)
+    setPendingCsvFile(null)
+  }
+
+  // Airレジ「シフト管理」CSV → ピタシフ形式に変換
+  const executeAirrejiShiftUpload = () => {
+    if (!pendingAltCsvFile) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result.replace(/^﻿/, '').trim()
+        const lines = text.split(/\r?\n/).filter(l => l.trim()).slice(1)
+        // Airレジ列: No=0, 日にち=1, 曜日=2, 開始=3, 終了=4, 表示名=5, 氏名-姓=6, 氏名-名=7,
+        // グループ=8, 退職者=9, 休憩開始=10, 休憩終了=11, 労働時間=12, 実労働=13, 休憩=14,
+        // ｺｰﾄﾞ=15, ﾒﾓ=16, 業務=17, ｼﾌﾄﾊﾟﾀｰﾝ=18
+        const rows = []
+        lines.forEach(line => {
+          const c = parseCsvLine(line)
+          if (c.length < 8) return
+          const day = parseDayFromDate(c[1])
+          const start = c[3], end = c[4]
+          const lastN = c[6], firstN = c[7]
+          const name = `${lastN} ${firstN}`.replace(/\s+/g, ' ').trim()
+          if (day && name && start && end) rows.push({ day, name, start, end })
+        })
+        const { count, unmatched } = applyShiftRows(rows)
+        if (count === 0) { setCsvMsg('Airレジ形式から有効な行が見つかりませんでした'); setShowCsvModal(false); return }
+        setCsvMsg(`✓ Airレジ取込: ${count}件のシフトを反映` + (unmatched ? ` (未マッチ ${unmatched}件)` : ''))
+        setTimeout(() => setCsvMsg(''), 4000)
+      } catch { setCsvMsg('Airレジ CSV の読み込みに失敗しました') }
+    }
+    reader.readAsText(pendingAltCsvFile, 'UTF-8')
+    setShowCsvModal(false)
+    setPendingAltCsvFile(null)
   }
 
   const getEffectiveTasks = (day) => specialTasks.map(t => ({ ...t, ...(dayTaskOverrides[day]?.[t.id] || {}) }))
@@ -273,6 +417,8 @@ export default function ShiftDecision() {
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
+          <button onClick={() => setShowCsvModal(true)} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>CSV アップロード</button>
           <button onClick={handleSaveDraft} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>下書き保存</button>
           <button onClick={handleConfirm} style={{ padding:'8px 14px', borderRadius:8, border:'none', background:'#10b981', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>シフト確定</button>
           <button onClick={() => setShowPublish(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', borderRadius:8, border:'none', background:'#f59e0b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>📢 シフト展開</button>
@@ -676,6 +822,88 @@ export default function ShiftDecision() {
           </div>
         </div>
       )}
+
+      {/* ── CSV Upload Modal ── */}
+      {showCsvModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>シフト決定 CSV アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>シフトデータをCSVから一括取込できます (バージョン: 「{currentVersion.name}」)</div>
+              </div>
+              <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:20, overflowY:'auto' }}>
+
+              {/* Section 1: ピタシフ */}
+              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:12, padding:'16px 18px' }}>
+                <div style={{ fontSize:14, fontWeight:700, color:'#0f172a', marginBottom:14 }}>ピタシフのフォーマットを使う場合</div>
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:4 }}>① フォーマットをダウンロード</div>
+                  <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6 }}>
+                    CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>{PITASHIFT_SHIFT_HEADER.join(',')}</code>
+                  </div>
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>氏名で既存スタッフを照合します。日にちはYYYY/M/D形式。</div>
+                  <button onClick={downloadShiftCsvFormat} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                    ↓ フォーマットをダウンロード
+                  </button>
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <button onClick={() => csvFileRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                      ファイルを選択
+                    </button>
+                    <input ref={csvFileRef} type="file" accept=".csv" className="hidden"
+                      onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
+                    <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={executePitashiftShiftUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+              </div>
+
+              {/* Section 2: 別フォーマット */}
+              <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:12, padding:'16px 18px' }}>
+                <div style={{ fontSize:14, fontWeight:700, color:'#0f172a', marginBottom:14 }}>別のフォーマットでアップロード</div>
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>① フォーマットを選択</div>
+                  <select value={altCsvFormat} onChange={e => setAltCsvFormat(e.target.value)} style={{
+                    padding:'8px 12px', borderRadius:8, border:'1px solid #fed7aa', background:'white',
+                    fontSize:13, fontWeight:600, color:'#334155', cursor:'pointer', fontFamily:'inherit', minWidth:160,
+                  }}>
+                    <option value="airreji">Airレジ</option>
+                  </select>
+                  <div style={{ fontSize:10.5, color:'#9a3412', marginTop:6, lineHeight:1.5 }}>
+                    {altCsvFormat === 'airreji' && 'Airレジ「シフト管理」CSVをそのままアップロードできます。氏名・日付・開始/終了時間からシフトを取り込み、ピタシフ形式に変換して反映します。'}
+                  </div>
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <button onClick={() => csvAltFileRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #fed7aa', background:'white', color:'#9a3412', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                      ファイルを選択
+                    </button>
+                    <input ref={csvAltFileRef} type="file" accept=".csv" className="hidden"
+                      onChange={e => { setPendingAltCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
+                    <span style={{ fontSize:12, color: pendingAltCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {pendingAltCsvFile ? pendingAltCsvFile.name : 'ファイルが選択されていません'}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={executeAirrejiShiftUpload} disabled={!pendingAltCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingAltCsvFile ? '#ea580c' : '#fed7aa', color:'white', fontSize:13, fontWeight:600, cursor: pendingAltCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+              </div>
+
+            </div>
+            <div style={{ padding:'14px 24px', borderTop:'1px solid #e2e8f0', display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={() => { setShowCsvModal(false); setPendingCsvFile(null); setPendingAltCsvFile(null) }} style={{ padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* hidden marker for shiftDataVersion: {shiftDataVersion} */}
     </div>
   )
 }
