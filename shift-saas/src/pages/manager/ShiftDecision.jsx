@@ -102,7 +102,38 @@ export default function ShiftDecision() {
   const [editDayTask,      setEditDayTask]      = useState(null) // taskId being edited for the day
   const [dayPatternMap,    setDayPatternMap]    = useState(initialDayPatterns) // day -> pattern key
   const [half,             setHalf]             = useState('first') // 'first' | 'second'
-  const visibleDays = daysConfig.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
+  const [viewMode,         setViewMode]         = useState('half')  // 'day' | 'week' | 'half' | 'month' | 'calendar'
+  const [showCalendar,     setShowCalendar]     = useState(false)
+  const [showDisplayPanel, setShowDisplayPanel] = useState(true)
+  const [displayItems,     setDisplayItems]     = useState({
+    salesPlan:      true,  // 実行計画売上
+    salesActual:    true,  // 売上ACTUAL
+    requiredStaff:  true,  // 必要人員数
+    assignedStaff:  true,  // 配置済み人数
+    skillBreakdown: true,  // スキル別配置数
+    totalTime:      true,  // 合計時間
+    specialTasks:   true,  // 特別業務 toggles
+    workSummary:    true,  // 勤務/労働/超勤/深夜/残深 列
+    paySummary:     true,  // 給与/交通費 列
+  })
+  const toggleDisplay = (k) => setDisplayItems(prev => ({ ...prev, [k]: !prev[k] }))
+
+  const visibleDays = useMemo(() => {
+    if (viewMode === 'day')   return daysConfig.filter(d => d.day === selectedDay)
+    if (viewMode === 'week') {
+      const start = Math.max(1, selectedDay - 3)
+      const end   = Math.min(daysConfig.length, start + 6)
+      return daysConfig.filter(d => d.day >= start && d.day <= end)
+    }
+    if (viewMode === 'month' || viewMode === 'calendar') return daysConfig
+    return daysConfig.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
+  }, [viewMode, half, selectedDay])
+
+  const visibleSumm = useMemo(() => SUMM.filter(s => {
+    if (['work','labor','overtime','lateNight','otLateNight'].includes(s.k)) return displayItems.workSummary
+    if (['pay','trans'].includes(s.k)) return displayItems.paySummary
+    return true
+  }), [displayItems.workSummary, displayItems.paySummary])
   const [shiftStatus,      setShiftStatus]      = useState(currentVersion.status)   // 'draft' | 'confirmed'
   const [saveFlash,     setSaveFlash]    = useState('')          // 'saved' | 'confirmed' | ''
   const [showPublish,   setShowPublish]  = useState(false)
@@ -234,6 +265,59 @@ export default function ShiftDecision() {
     reader.readAsText(pendingCsvFile, 'UTF-8')
     setShowCsvModal(false)
     setPendingCsvFile(null)
+  }
+
+  // ── 印刷プレビュー (新ウィンドウ) ────────────────────────────────────
+  const openPrintPreview = () => {
+    const win = window.open('', '_blank', 'width=1400,height=800')
+    if (!win) { alert('ポップアップがブロックされました。許可してください。'); return }
+    const fmt = (h) => {
+      if (h == null) return ''
+      const hh = Math.floor(h)
+      const mm = Math.round((h - hh) * 60)
+      return `${hh}:${String(mm).padStart(2, '0')}`
+    }
+    const rows = staff.map(s => {
+      const cells = daysConfig.map(d => {
+        const code = shiftData[s.id]?.[d.day - 1]
+        if (!code || code === 'X') return '<td style="border:1px solid #cbd5e1;padding:3px 4px;"></td>'
+        const t = parseShiftTimes(code); if (!t) return '<td style="border:1px solid #cbd5e1;padding:3px 4px;"></td>'
+        const isToday = d.day === selectedDay
+        const bg = isToday ? 'background:#bfdbfe;color:#1e3a8a;font-weight:700;' : 'background:#eff6ff;color:#1e40af;'
+        return `<td style="${bg}border:1px solid #cbd5e1;padding:3px 4px;font-size:9.5px;text-align:center;white-space:nowrap;">${fmt(t.start)}〜${fmt(t.end)}</td>`
+      }).join('')
+      return `<tr><td style="border:1px solid #cbd5e1;padding:3px 8px;font-size:11px;font-weight:600;background:#f8fafc;white-space:nowrap;">${s.name}</td>${cells}</tr>`
+    }).join('')
+    const dateHdr = daysConfig.map(d => {
+      const isWE = d.dow === '土' || d.dow === '日'
+      return `<th style="border:1px solid #cbd5e1;padding:3px 4px;font-size:9.5px;background:#e2e8f0;color:${isWE ? '#be123c' : '#1e293b'};white-space:nowrap;">4/${d.day} (${d.dow})</th>`
+    }).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>シフト印刷プレビュー</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; padding: 24px; margin: 0; }
+        .head { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:14px; }
+        .title { font-size:13px; font-weight:700; color:#0f172a; }
+        .store { font-size:11px; color:#64748b; }
+        .actions { margin-bottom:12px; }
+        button { padding:6px 14px; border-radius:6px; border:1px solid #cbd5e1; background:white; font-size:12px; cursor:pointer; margin-right:6px; }
+        button.primary { background:#4f46e5; color:white; border-color:#4f46e5; }
+        table { border-collapse:collapse; }
+        @media print { .actions { display:none; } body { padding: 8mm; } @page { size: landscape; } }
+      </style></head><body>
+      <div class="actions">
+        <button class="primary" onclick="window.print()">印刷</button>
+        <button onclick="window.close()">閉じる</button>
+      </div>
+      <div class="head">
+        <div class="title">${YEAR_MONTH} 1日(${daysConfig[0]?.dow || ''})〜${daysConfig.length}日(${daysConfig[daysConfig.length-1]?.dow || ''})のシフト ${currentVersion.name ? '「' + currentVersion.name + '」' : ''}</div>
+        <div class="store">Segafredo ZANETTI 新宿三丁目店</div>
+      </div>
+      <table>
+        <thead><tr><th style="border:1px solid #cbd5e1;padding:6px 10px;font-size:11px;background:#e2e8f0;color:#1e293b;text-align:left;">スタッフ</th>${dateHdr}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </body></html>`
+    win.document.write(html); win.document.close()
   }
 
   // Airレジ「シフト管理」CSV → ピタシフ形式に変換
@@ -426,17 +510,85 @@ export default function ShiftDecision() {
         </div>
       </div>
 
-      {/* ── Half toggle ── */}
-      <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
-        <span style={{ fontSize:12, color:'#64748b' }}>期間:</span>
-        {[{ k:'first', l:'前半 (1〜15日)' }, { k:'second', l:'後半 (16〜30日)' }].map(o => (
-          <button key={o.k} onClick={() => { setHalf(o.k); setSelectedDay(o.k === 'first' ? 1 : 16) }} style={{
-            padding:'5px 14px', borderRadius:18, fontSize:12, fontWeight: half === o.k ? 700 : 500,
-            background: half === o.k ? '#4f46e5' : '#f0f5f9',
-            color:      half === o.k ? 'white'   : '#475569',
-            border:'none', cursor:'pointer', fontFamily:'inherit',
-          }}>{o.l}</button>
-        ))}
+      {/* ── Period + View mode + Print ── */}
+      <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:10, flexShrink:0 }}>
+        {/* Left: 期間 toggle (only meaningful for half view) */}
+        {viewMode === 'half' && (
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <span style={{ fontSize:12, color:'#64748b' }}>期間:</span>
+            {[{ k:'first', l:'前半 (1〜15日)' }, { k:'second', l:'後半 (16〜30日)' }].map(o => (
+              <button key={o.k} onClick={() => { setHalf(o.k); setSelectedDay(o.k === 'first' ? 1 : 16) }} style={{
+                padding:'5px 14px', borderRadius:18, fontSize:12, fontWeight: half === o.k ? 700 : 500,
+                background: half === o.k ? '#4f46e5' : '#f0f5f9',
+                color:      half === o.k ? 'white'   : '#475569',
+                border:'none', cursor:'pointer', fontFamily:'inherit',
+              }}>{o.l}</button>
+            ))}
+          </div>
+        )}
+        {viewMode !== 'half' && (
+          <div style={{ fontSize:12, color:'#64748b' }}>
+            表示: {viewMode === 'day' ? `${selectedDay}日のみ` : viewMode === 'week' ? `${selectedDay}日を含む7日間` : viewMode === 'month' ? '月全体 (30日)' : 'カレンダー'}
+          </div>
+        )}
+
+        {/* Right: View mode buttons + カレンダー + 印刷プレビュー */}
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ display:'inline-flex', border:'1px solid #cbd5e1', borderRadius:6, overflow:'hidden' }}>
+            {[
+              { k:'day',   l:'日' },
+              { k:'week',  l:'週' },
+              { k:'half',  l:'半月' },
+              { k:'month', l:'月' },
+            ].map(o => (
+              <button key={o.k} onClick={() => setViewMode(o.k)} style={{
+                padding:'5px 14px', fontSize:12, fontWeight: viewMode === o.k ? 700 : 500,
+                background: viewMode === o.k ? '#4f46e5' : 'white',
+                color:      viewMode === o.k ? 'white'   : '#475569',
+                border:'none', borderLeft: o.k !== 'day' ? '1px solid #e2e8f0' : 'none',
+                cursor:'pointer', fontFamily:'inherit',
+              }}>{o.l}</button>
+            ))}
+          </div>
+          <button onClick={() => { setViewMode('calendar'); setShowCalendar(true) }} style={{
+            padding:'4px 8px', fontSize:12, color:'#0284c7', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit',
+          }}>カレンダー</button>
+          <button onClick={openPrintPreview} style={{
+            padding:'4px 8px', fontSize:12, color:'#0284c7', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit',
+          }}>印刷プレビュー</button>
+        </div>
+      </div>
+
+      {/* ── 表示設定 (display items checkboxes) ── */}
+      <div style={{ flexShrink:0, background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 12px' }}>
+        <button onClick={() => setShowDisplayPanel(v => !v)} style={{
+          background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit',
+          fontSize:12, fontWeight:600, color:'#475569', display:'flex', alignItems:'center', gap:4,
+        }}>
+          <span style={{ fontSize:10, color:'#64748b' }}>{showDisplayPanel ? '▼' : '▶'}</span>
+          表示設定
+          <span style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginLeft:4 }}>※ 各表示項目における合計値は下書きシフトと確定シフトの合計となります。</span>
+        </button>
+        {showDisplayPanel && (
+          <div style={{ marginTop:8, display:'flex', flexWrap:'wrap', gap:'6px 16px', fontSize:12 }}>
+            {[
+              { k:'salesPlan',      l:'売上予算' },
+              { k:'salesActual',    l:'売上ACTUAL' },
+              { k:'requiredStaff',  l:'必要人数' },
+              { k:'assignedStaff',  l:'シフト人数' },
+              { k:'skillBreakdown', l:'スキル別人員' },
+              { k:'totalTime',      l:'合計時間' },
+              { k:'specialTasks',   l:'業務内容' },
+              { k:'workSummary',    l:'労働時間' },
+              { k:'paySummary',     l:'概算人件費' },
+            ].map(({ k, l }) => (
+              <label key={k} style={{ display:'flex', alignItems:'center', gap:5, cursor:'pointer', userSelect:'none' }}>
+                <input type="checkbox" checked={displayItems[k]} onChange={() => toggleDisplay(k)} style={{ accentColor:'#4f46e5' }} />
+                <span style={{ color: displayItems[k] ? '#0f172a' : '#94a3b8' }}>{l}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Day selector ── */}
@@ -473,6 +625,7 @@ export default function ShiftDecision() {
       </div>
 
       {/* ── Special task toggles (per-day) ── */}
+      {displayItems.specialTasks && (
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-start', flexShrink:0 }}>
         <span style={{ fontSize:12, color:'#64748b', paddingTop:6 }}>特別業務:</span>
         {effectiveTasks.map(t => {
@@ -518,6 +671,7 @@ export default function ShiftDecision() {
           )
         })}
       </div>
+      )}
 
       {/* ── Main grid ── */}
       <div style={{ flex:1, minHeight:0, overflowX:'auto', overflowY:'auto', background:'white', border:B, borderRadius:10, boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
@@ -528,7 +682,7 @@ export default function ShiftDecision() {
             <col style={{ width:ETW }} />
             {slots.map((_, i) => <col key={i} style={{ width:slotW }} />)}
             <col style={{ width:52 }} />
-            {SUMM.map(s => <col key={s.k} style={{ width:s.w }} />)}
+            {visibleSumm.map(s => <col key={s.k} style={{ width:s.w }} />)}
           </colgroup>
           <thead>
             <tr>
@@ -536,7 +690,7 @@ export default function ShiftDecision() {
               <th rowSpan={2} colSpan={2} style={th({ ...sH1 })}></th>
               {hours.map(h => <th key={h} colSpan={slots.filter(s => parseInt(s) === h).length} style={th({ borderBottom:'1px solid #cbd5e1' })}>{h}:00</th>)}
               <th rowSpan={2} style={th({ background:'#94a3b8', color:'white', fontWeight:700 })}>合計</th>
-              <th rowSpan={2} colSpan={SUMM.length} style={{ border:B, background:'#e2e8f0' }} />
+              <th rowSpan={2} colSpan={visibleSumm.length} style={{ border:B, background:'#e2e8f0' }} />
             </tr>
             <tr>
               {slots.map(slot => <th key={slot} style={th({ fontSize:10, fontWeight:400, color:'#94a3b8' })}>{slot.split(':')[1]}</th>)}
@@ -544,51 +698,59 @@ export default function ShiftDecision() {
           </thead>
           <tbody>
             {/* ── 実行計画売上 ── */}
+            {displayItems.salesPlan && (<>
             <tr>
               <td rowSpan={2} style={td({ ...sL0, textAlign:'left', background:'white', color:'#334155', fontWeight:600, borderRight:BB, lineHeight:1.4 })}>実行計画売上<br/><span style={{ fontSize:9, fontWeight:400 }}>(千円)</span></td>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#64748b', fontSize:10 })}>PLAN</td>
               {slots.map(slot => { const v = slotSalesKen(slot); return <td key={slot} style={td({ color: v > 0 ? '#0f172a' : '#cbd5e1' })}>{v > 0 ? v : ''}</td> })}
               <td style={td({ background:'#e8edf4', color:'#1e293b', fontWeight:700 })}>{dayTarget?.sales ?? 0}</td>
-              {SUMM.map(s => <td key={s.k} style={td()} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td()} />)}
             </tr>
             <tr>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#94a3b8', fontSize:10 })}>累計</td>
               {cumSales.map((v, i) => <td key={i} style={td({ color:'#94a3b8', fontSize:10 })}>{v}</td>)}
               <td style={td()} />
-              {SUMM.map(s => <td key={s.k} style={td()} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td()} />)}
             </tr>
+            </>)}
             {/* ── 売上ACTUAL ── */}
+            {displayItems.salesActual && (<>
             <tr>
               <td rowSpan={2} style={td({ ...sL0, textAlign:'left', background:'white', color:'#334155', fontWeight:600, borderRight:BB, lineHeight:1.4 })}>売上ACTUAL<br/><span style={{ fontSize:9, fontWeight:400 }}>(千円)</span></td>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#64748b', fontSize:10 })}>ACTUAL</td>
               {slots.map(slot => <td key={slot} style={td()} />)}
               <td style={td()} />
-              {SUMM.map(s => <td key={s.k} style={td()} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td()} />)}
             </tr>
             <tr>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#94a3b8', fontSize:10 })}>累計</td>
               {slots.map(slot => <td key={slot} style={td()} />)}
               <td style={td()} />
-              {SUMM.map(s => <td key={s.k} style={td()} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td()} />)}
             </tr>
+            </>)}
             {/* ── 必要人員数 ── */}
+            {displayItems.requiredStaff && (
             <tr>
               <td style={td({ ...sL0, textAlign:'left', background:'white', color:'#334155', fontWeight:600, borderRight:BB })}>必要人員数</td>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#64748b', fontSize:10 })}>PLAN</td>
               {slots.map(slot => { const r = getRequired(slot); return <td key={slot} style={td({ fontWeight: r > 0 ? 600 : 400, color: r > 0 ? '#1e293b' : '#cbd5e1' })}>{r > 0 ? r.toFixed(2) : ''}</td> })}
               <td style={td({ background:'#e8edf4', color:'#1e293b', fontWeight:700 })}>{slots.reduce((s, slot) => s + getRequired(slot), 0).toFixed(2)}</td>
-              {SUMM.map(s => <td key={s.k} style={td()} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td()} />)}
             </tr>
+            )}
             {/* ── 配置済み人数 ── */}
+            {displayItems.assignedStaff && (
             <tr>
               <td style={td({ ...sL0, textAlign:'left', background:'white', color:'#334155', fontWeight:600, borderRight:BB })}>配置済み人数</td>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#64748b', fontSize:10 })}>実績</td>
               {slots.map(slot => { const cnt = getAssignedList(slot).length; const req = getRequired(slot); return <td key={slot} style={td({ ...reqColor(cnt, req), fontWeight:600 })}>{cnt > 0 ? cnt : ''}</td> })}
               <td style={td()} />
-              {SUMM.map(s => <td key={s.k} style={td()} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td()} />)}
             </tr>
+            )}
             {/* ── スキル別配置数 ── */}
-            {Object.entries(skillLabels).map(([key, label]) => (
+            {displayItems.skillBreakdown && Object.entries(skillLabels).map(([key, label]) => (
               <tr key={key}>
                 <td style={td({ ...sL0, textAlign:'left', background:'#fafafa', color:'#475569', fontWeight:600, borderRight:BB, fontSize:11 })}>
                   スキル: {label}<br/><span style={{ fontSize:9, fontWeight:400, color:'#94a3b8' }}>配置数</span>
@@ -601,18 +763,20 @@ export default function ShiftDecision() {
                 <td style={td({ background:'#eef2ff', color:'#3730a3', fontWeight:700 })}>
                   {slots.reduce((s, slot) => s + getAssignedList(slot).filter(id => staff.find(m => m.id === id)?.skills.includes(key)).length, 0)}
                 </td>
-                {SUMM.map(s => <td key={s.k} style={td({ background:'#fafafa' })} />)}
+                {visibleSumm.map(s => <td key={s.k} style={td({ background:'#fafafa' })} />)}
               </tr>
             ))}
 
             {/* ── 合計時間 ── */}
+            {displayItems.totalTime && (
             <tr>
               <td style={td({ ...sL0, textAlign:'left', background:'white', color:'#334155', fontWeight:600, borderRight:BB, borderBottom:'2px solid #cbd5e1' })}>合計時間</td>
               <td colSpan={2} style={td({ ...sL1, background:'white', color:'#64748b', fontSize:10, borderBottom:'2px solid #cbd5e1' })}>PLAN</td>
               {slots.map(slot => { const r = getRequired(slot); return <td key={slot} style={td({ color: r > 0 ? '#0f172a' : '#cbd5e1', borderBottom:'2px solid #cbd5e1' })}>{r > 0 ? r.toFixed(2) : ''}</td> })}
               <td style={td({ background:'#e8edf4', color:'#1e293b', fontWeight:700, borderBottom:'2px solid #cbd5e1' })}>{slots.reduce((s, slot) => s + getRequired(slot), 0).toFixed(2)}</td>
-              {SUMM.map(s => <td key={s.k} style={td({ borderBottom:'2px solid #cbd5e1' })} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td({ borderBottom:'2px solid #cbd5e1' })} />)}
             </tr>
+            )}
           </tbody>
 
           <tbody>
@@ -622,7 +786,7 @@ export default function ShiftDecision() {
               <th rowSpan={2} colSpan={2} style={th({ ...sH1 })}>勤務時間</th>
               {hours.map(h => <th key={h} colSpan={slots.filter(s => parseInt(s) === h).length} style={th({ borderBottom:'1px solid #cbd5e1' })}>{h}:00</th>)}
               <th rowSpan={2} style={{ border:B, background:'#e2e8f0' }} />
-              {SUMM.map(s => <th key={s.k} rowSpan={2} style={th({ background:'#94a3b8', color:'white', fontWeight:700 })}>{s.l}</th>)}
+              {visibleSumm.map(s => <th key={s.k} rowSpan={2} style={th({ background:'#94a3b8', color:'white', fontWeight:700 })}>{s.l}</th>)}
             </tr>
             <tr>
               {slots.map(slot => <th key={slot} style={th({ fontSize:10, fontWeight:400, color:'#94a3b8' })}>{slot.split(':')[1]}</th>)}
@@ -661,7 +825,7 @@ export default function ShiftDecision() {
                     )
                   })}
                   <td style={td({ background:rowBg })} />
-                  {SUMM.map(col => {
+                  {visibleSumm.map(col => {
                     const v = summ ? (
                       col.k === 'work'         ? summ.work.toFixed(2) :
                       col.k === 'labor'        ? summ.labor.toFixed(2) :
@@ -683,14 +847,14 @@ export default function ShiftDecision() {
               <td colSpan={2} style={td({ ...sL1, background:'var(--pita-bg-subtle)', textAlign:'left', fontSize:9, color:'var(--pita-muted)' })}>時間帯別計画時間</td>
               {slots.map(slot => { const r = getRequired(slot); return <td key={slot} style={td({ background:'var(--pita-bg-subtle)', fontWeight: r > 0 ? 700 : 400, color: r > 0 ? '#1e293b' : 'var(--pita-faint)' })}>{r > 0 ? r.toFixed(2) : ''}</td> })}
               <td style={td({ background:'var(--pita-bg-subtle)' })} />
-              {SUMM.map(s => <td key={s.k} style={td({ background:'var(--pita-bg-subtle)' })} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td({ background:'var(--pita-bg-subtle)' })} />)}
             </tr>
             <tr>
               <td style={td({ ...sL0, background:'var(--pita-bg-subtle)' })} />
               <td colSpan={2} style={td({ ...sL1, background:'var(--pita-bg-subtle)', textAlign:'left', fontSize:9, color:'var(--pita-muted)' })}>時間帯別人時売上高</td>
               {slots.map(slot => { const v = slotSalesPH(slot); return <td key={slot} style={td({ background:'var(--pita-bg-subtle)', fontSize:9, color:'var(--pita-muted)' })}>{v > 0 ? `¥${v.toLocaleString()}` : ''}</td> })}
               <td style={td({ background:'var(--pita-bg-subtle)' })} />
-              {SUMM.map(s => <td key={s.k} style={td({ background:'var(--pita-bg-subtle)' })} />)}
+              {visibleSumm.map(s => <td key={s.k} style={td({ background:'var(--pita-bg-subtle)' })} />)}
             </tr>
           </tfoot>
         </table>
@@ -819,6 +983,55 @@ export default function ShiftDecision() {
                 <button onClick={() => setShowAI(false)} className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-semibold hover:bg-blue-700">確認する</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── カレンダー Modal ── */}
+      {showCalendar && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+          onClick={() => setShowCalendar(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:16, width:'100%', maxWidth:680, boxShadow:'0 20px 60px rgba(15,23,42,0.18)', padding:'24px 28px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+              <div>
+                <div style={{ fontSize:16, fontWeight:700, color:'#0f172a' }}>カレンダー — {YEAR_MONTH}</div>
+                <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>日付をクリックすると、その日のシフト編集に移動します</div>
+              </div>
+              <button onClick={() => setShowCalendar(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
+            </div>
+            {/* 7-col calendar grid */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:4, fontSize:11 }}>
+              {['日','月','火','水','木','金','土'].map(w => (
+                <div key={w} style={{
+                  textAlign:'center', padding:'6px 0', fontWeight:700, fontSize:11,
+                  color: w === '土' ? '#2563eb' : w === '日' ? '#dc2626' : '#475569',
+                }}>{w}</div>
+              ))}
+              {(() => {
+                const dowIndex = ['日','月','火','水','木','金','土']
+                const firstDow = dowIndex.indexOf(daysConfig[0]?.dow || '水')
+                const blanks = Array.from({ length: firstDow }, (_, i) => <div key={`b${i}`} />)
+                const cells = daysConfig.map(d => {
+                  const cnt = staff.reduce((acc, s) => {
+                    const code = shiftData[s.id]?.[d.day - 1]
+                    return acc + (code && code !== 'X' ? 1 : 0)
+                  }, 0)
+                  const isSel = d.day === selectedDay
+                  return (
+                    <button key={d.day} onClick={() => { setSelectedDay(d.day); setHalf(d.day <= 15 ? 'first' : 'second'); setShowCalendar(false); setViewMode('day') }} style={{
+                      padding:'10px 6px', borderRadius:8, border:`1px solid ${isSel ? '#4f46e5' : '#e2e8f0'}`,
+                      background: isSel ? '#eef2ff' : 'white',
+                      cursor:'pointer', fontFamily:'inherit', textAlign:'center', minHeight:64,
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start', gap:4,
+                    }}>
+                      <span style={{ fontSize:13, fontWeight:700, color: d.dow === '土' ? '#2563eb' : d.dow === '日' ? '#dc2626' : '#0f172a' }}>{d.day}</span>
+                      <span style={{ fontSize:9, color:'#94a3b8' }}>{cnt}名出勤</span>
+                    </button>
+                  )
+                })
+                return [...blanks, ...cells]
+              })()}
+            </div>
           </div>
         </div>
       )}
