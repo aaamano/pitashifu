@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { dailyTargets, YEAR_MONTH, storeConfig, calcRequiredStaff, ORDER_DISTRIBUTION, SALES_PATTERNS } from '../../data/mockData'
+import { readWorkbookFromFile, extractSalesPatterns, matchPatternKey } from '../../utils/excelImport.js'
 
 const PATTERN_HOURS = Array.from({ length: 14 }, (_, i) => i + 9) // 9-22
 
@@ -176,6 +177,41 @@ export default function Targets() {
     a.download = 'sales_patterns_format.csv'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // .xlsx → ﾃﾞｰﾀ入力シートから時間帯別売上パターンを抽出してマージ
+  const executePatternExcelUpload = async () => {
+    if (!pendingPatternCsvFile) return
+    try {
+      const wb = await readWorkbookFromFile(pendingPatternCsvFile)
+      const excelPatterns = extractSalesPatterns(wb)
+      if (!excelPatterns.length) { setPatternCsvMsg('Excel からパターンを読み取れませんでした。'); setShowPatternCsvModal(false); return }
+      const next = JSON.parse(JSON.stringify(patterns))
+      const matched = []
+      const keys = Object.keys(SALES_PATTERNS)
+      excelPatterns.forEach((p, i) => {
+        const matchedKey = matchPatternKey(p.label, SALES_PATTERNS) || keys[i] || null
+        if (!matchedKey || !next[matchedKey]) return
+        // 既存の hourlySales を上書き (時間帯ごとに)
+        next[matchedKey].hourlySales = { ...next[matchedKey].hourlySales, ...p.hourlySales }
+        matched.push(`${matchedKey}(${p.label})`)
+      })
+      if (matched.length === 0) { setPatternCsvMsg('一致するパターンがありませんでした。'); setShowPatternCsvModal(false); return }
+      setPatterns(next)
+      setPatternCsvMsg(`✓ Excel取込: ${matched.length}パターン (${matched.join(', ')})`)
+      setTimeout(() => setPatternCsvMsg(''), 4000)
+    } catch {
+      setPatternCsvMsg('Excel の読み込みに失敗しました。')
+    }
+    setShowPatternCsvModal(false)
+    setPendingPatternCsvFile(null)
+  }
+
+  const executePatternUpload = () => {
+    if (!pendingPatternCsvFile) return
+    const ext = (pendingPatternCsvFile.name.split('.').pop() || '').toLowerCase()
+    if (ext === 'xlsx' || ext === 'xls') return executePatternExcelUpload()
+    return executePatternCsvUpload()
   }
 
   const executePatternCsvUpload = () => {
@@ -488,9 +524,9 @@ export default function Targets() {
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             {patternCsvMsg && <span style={{ fontSize:12, color: patternCsvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{patternCsvMsg}</span>}
             <button onClick={() => setShowPatternCsvModal(true)} className="mgr-btn-secondary">
-              CSV アップロード
+              CSV / Excel アップロード
             </button>
-            <input ref={patternFileInputRef} type="file" accept=".csv" className="hidden"
+            <input ref={patternFileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
               onChange={e => { setPendingPatternCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
           </div>
         </div>
@@ -691,8 +727,8 @@ export default function Targets() {
           <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:520, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
             <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
-                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>時間帯別売上パターン CSV アップロード</div>
-                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>5パターンの時間帯別売上をCSVファイルから読み込みます</div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>時間帯別売上パターン CSV / Excel アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>CSV、またはピタシフ Excel (ﾃﾞｰﾀ入力シート) から時間帯別売上を読み込みます</div>
               </div>
               <button onClick={() => setShowPatternCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
             </div>
@@ -707,6 +743,9 @@ export default function Targets() {
                     各パターンに「売上(円)」「構成比(%)」の2行が並びます。<br />
                     ※ 構成比は計算項目のため自動的に再計算されます
                   </div>
+                  <div style={{ marginTop:6, fontSize:10.5, color:'#4f46e5' }}>
+                    <strong>Excel (.xlsx) もそのままアップロード可</strong>: 「ﾃﾞｰﾀ入力」シートの時間帯別売上 (K/N/Q/T/W 列) から最大5パターンを取り込みます。
+                  </div>
                 </div>
                 <button onClick={downloadPatternCsvFormat} style={{
                   display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8,
@@ -718,7 +757,7 @@ export default function Targets() {
               </div>
               {/* File picker */}
               <div>
-                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSV / Excel ファイルを選択</div>
                 <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                   <button onClick={() => patternFileInputRef.current?.click()} style={{
                     padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0',
@@ -738,7 +777,7 @@ export default function Targets() {
                 padding:'9px 18px', borderRadius:8, border:'1px solid #dde5f0', background:'white',
                 color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
               }}>キャンセル</button>
-              <button onClick={executePatternCsvUpload} disabled={!pendingPatternCsvFile} style={{
+              <button onClick={executePatternUpload} disabled={!pendingPatternCsvFile} style={{
                 padding:'9px 18px', borderRadius:8, border:'none',
                 background: pendingPatternCsvFile ? '#4f46e5' : '#c7d2fe',
                 color:'white', fontSize:13, fontWeight:600,

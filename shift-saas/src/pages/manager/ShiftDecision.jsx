@@ -7,6 +7,7 @@ import {
   decomposeShiftHours, calcDailyPay, SALES_PATTERNS, dayPatterns as initialDayPatterns,
   shiftVersions,
 } from '../../data/mockData'
+import { readWorkbookFromFile, extractShifts } from '../../utils/excelImport.js'
 
 const AI_STAGES = [
   'シフトデータを解析中...',
@@ -238,6 +239,44 @@ export default function ShiftDecision() {
     })
     if (count) setShiftDataVersion(v => v + 1)
     return { count, unmatched }
+  }
+
+  // .xlsx の ｼﾌﾄ原本 シートから 1〜31日のシフトコードを直接取り込む
+  //   - NO. 列 (A) を id にして staff にマッチ。コードは 'F' / 'X' / 'O-16' / '13-L' / '9-18' 等そのまま。
+  const executePitashiftShiftExcelUpload = async () => {
+    if (!pendingCsvFile) return
+    try {
+      const wb = await readWorkbookFromFile(pendingCsvFile)
+      const { rows } = extractShifts(wb)
+      if (!rows.length) { setCsvMsg('Excel からシフトを読み取れませんでした。'); setShowCsvModal(false); return }
+      let count = 0, unmatched = 0
+      rows.forEach(({ no, days }) => {
+        const sm = staff.find(s => s.id === no)
+        if (!sm) { unmatched++; return }
+        if (!shiftData[sm.id]) shiftData[sm.id] = Array.from({ length: daysConfig.length }, () => 'X')
+        days.forEach((code, i) => {
+          if (i >= daysConfig.length) return
+          // 空セル・参照エラー (#REF!) は X に丸める
+          const v = (!code || /^#REF/.test(code)) ? 'X' : code
+          shiftData[sm.id][i] = v
+        })
+        count++
+      })
+      if (count) setShiftDataVersion(v => v + 1)
+      setCsvMsg(`✓ Excel取込: ${count}名分のシフトを反映` + (unmatched ? ` (未マッチ ${unmatched}件)` : ''))
+      setTimeout(() => setCsvMsg(''), 4000)
+    } catch {
+      setCsvMsg('Excel の読み込みに失敗しました。')
+    }
+    setShowCsvModal(false)
+    setPendingCsvFile(null)
+  }
+
+  const executePitashiftShiftUploadAny = () => {
+    if (!pendingCsvFile) return
+    const ext = (pendingCsvFile.name.split('.').pop() || '').toLowerCase()
+    if (ext === 'xlsx' || ext === 'xls') return executePitashiftShiftExcelUpload()
+    return executePitashiftShiftUpload()
   }
 
   const executePitashiftShiftUpload = () => {
@@ -502,7 +541,7 @@ export default function ShiftDecision() {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
-          <button onClick={() => setShowCsvModal(true)} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>CSV アップロード</button>
+          <button onClick={() => setShowCsvModal(true)} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>CSV / Excel アップロード</button>
           <button onClick={handleSaveDraft} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>下書き保存</button>
           <button onClick={handleConfirm} style={{ padding:'8px 14px', borderRadius:8, border:'none', background:'#10b981', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>シフト確定</button>
           <button onClick={() => setShowPublish(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', borderRadius:8, border:'none', background:'#f59e0b', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>📢 シフト展開</button>
@@ -1042,8 +1081,8 @@ export default function ShiftDecision() {
           <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
             <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
-                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>シフト決定 CSV アップロード</div>
-                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>シフトデータをCSVから一括取込できます (バージョン: 「{currentVersion.name}」)</div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>シフト決定 CSV / Excel アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>シフトデータを CSV / Excel から一括取込できます (バージョン: 「{currentVersion.name}」)</div>
               </div>
               <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
             </div>
@@ -1057,25 +1096,28 @@ export default function ShiftDecision() {
                   <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6 }}>
                     CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>{PITASHIFT_SHIFT_HEADER.join(',')}</code>
                   </div>
-                  <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>氏名で既存スタッフを照合します。日にちはYYYY/M/D形式。</div>
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:6 }}>氏名で既存スタッフを照合します。日にちはYYYY/M/D形式。</div>
+                  <div style={{ fontSize:10.5, color:'#4f46e5', marginBottom:10 }}>
+                    <strong>Excel (.xlsx) もそのままアップロード可</strong>: 「ｼﾌﾄ原本」シートの NO. 列と E〜AI 列のシフトコード (F / X / 9-18 / O-16 / 13-L 等) を1〜31日として取り込みます。
+                  </div>
                   <button onClick={downloadShiftCsvFormat} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
                     ↓ フォーマットをダウンロード
                   </button>
                 </div>
                 <div style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSV / Excel ファイルを選択</div>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <button onClick={() => csvFileRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
                       ファイルを選択
                     </button>
-                    <input ref={csvFileRef} type="file" accept=".csv" className="hidden"
+                    <input ref={csvFileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
                       onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
                     <span style={{ fontSize:12, color: pendingCsvFile ? '#0f172a' : '#94a3b8', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                       {pendingCsvFile ? pendingCsvFile.name : 'ファイルが選択されていません'}
                     </span>
                   </div>
                 </div>
-                <button onClick={executePitashiftShiftUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+                <button onClick={executePitashiftShiftUploadAny} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
               </div>
 
               {/* Section 2: 別フォーマット */}

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { staff as initialStaff, shiftData, daysConfig, skillLabels, YEAR_MONTH, staffConstraints as initialConstraints } from '../../data/mockData'
 import { api } from '../../api/index.js'
+import { readWorkbookFromFile, extractStaffList } from '../../utils/excelImport.js'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function parseShiftTimes(code) {
@@ -152,6 +153,57 @@ export default function Members() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = 'members_format.csv'; a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // .xlsx → ﾃﾞｰﾀ入力シートから NO. を id として突合してメンバーを更新する
+  // (CSV はスタッフ名で突合する一方、Excel の名前列は「K.M」のような短縮形のため
+  //  NO. = id でマッチさせるほうが安全)
+  const executeMemberExcelUpload = async () => {
+    if (!pendingCsvFile) return
+    try {
+      const wb = await readWorkbookFromFile(pendingCsvFile)
+      const { staff: excelStaff } = extractStaffList(wb)
+      if (!excelStaff.length) { setCsvMsg('Excel からスタッフを読み取れませんでした。'); setShowCsvModal(false); return }
+      let updated = 0, added = 0
+      const next = [...members]
+      excelStaff.forEach(({ no, name, wage, transit }) => {
+        const idx = next.findIndex(m => m.id === no)
+        if (idx >= 0) {
+          next[idx] = {
+            ...next[idx],
+            name: name || next[idx].name,
+            wage: wage ?? next[idx].wage,
+            transitPerDay: transit ?? next[idx].transitPerDay,
+          }
+          updated++
+        } else {
+          next.push({
+            ...BLANK_MEMBER,
+            id: no,
+            name,
+            type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7,
+            wage: wage ?? 1050,
+            transitPerDay: transit ?? 0,
+          })
+          added++
+        }
+      })
+      setMembers(next)
+      setCsvMsg(`✓ Excel取込: 更新${updated}名 / 新規${added}名`)
+      setTimeout(() => setCsvMsg(''), 4000)
+    } catch {
+      setCsvMsg('Excel の読み込みに失敗しました。')
+    }
+    setShowCsvModal(false)
+    setPendingCsvFile(null)
+  }
+
+  // CSV / Excel をファイル拡張子で振り分けて実行
+  const executeMemberUpload = () => {
+    if (!pendingCsvFile) return
+    const ext = (pendingCsvFile.name.split('.').pop() || '').toLowerCase()
+    if (ext === 'xlsx' || ext === 'xls') return executeMemberExcelUpload()
+    return executeMemberCsvUpload()
   }
 
   const executeMemberCsvUpload = () => {
@@ -342,8 +394,8 @@ export default function Members() {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
-          <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">CSV アップロード</button>
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+          <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">CSV / Excel アップロード</button>
+          <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
             onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
           <button onClick={openNew} className="mgr-btn-primary">+ スタッフを追加</button>
         </div>
@@ -519,8 +571,8 @@ export default function Members() {
           <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
             <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
-                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>メンバー CSV アップロード</div>
-                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>スタッフのマスターデータをCSVで一括更新します</div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>メンバー CSV / Excel アップロード</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>スタッフのマスターデータをCSV / Excel で一括更新します</div>
               </div>
               <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
             </div>
@@ -537,14 +589,17 @@ export default function Members() {
                   <div style={{ fontSize:11, color:'#64748b', marginBottom:4, lineHeight:1.6 }}>
                     CSVの形式: <code style={{ background:'#e8edf4', padding:'1px 5px', borderRadius:4 }}>スタッフ名,雇用形態,役職,スキル(;区切り),時給(円),交通費/日(円),残留優先度,1日〜30日</code>
                   </div>
-                  <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>スキルはバリスタ;レジ;フロア の形式。スタッフ名で既存レコードを照合します。</div>
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginBottom:10 }}>
+                    スキルはバリスタ;レジ;フロア の形式。スタッフ名で既存レコードを照合します。<br />
+                    <strong style={{ color:'#4f46e5' }}>Excel (.xlsx) もそのままアップロード可</strong>: 「ﾃﾞｰﾀ入力」シートの NO. / 名前 / 時給 / 交通費 を取り込みます。
+                  </div>
                   <button onClick={downloadMemberCsv} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'1px solid #4f46e5', background:'white', color:'#4f46e5', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
                     ↓ フォーマットをダウンロード
                   </button>
                 </div>
                 {/* ② */}
                 <div style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSVファイルを選択</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#334155', marginBottom:8 }}>② CSV / Excel ファイルを選択</div>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <button onClick={() => fileInputRef.current?.click()} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
                       ファイルを選択
@@ -554,7 +609,7 @@ export default function Members() {
                     </span>
                   </div>
                 </div>
-                <button onClick={executeMemberCsvUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
+                <button onClick={executeMemberUpload} disabled={!pendingCsvFile} style={{ padding:'9px 18px', borderRadius:8, border:'none', background: pendingCsvFile ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600, cursor: pendingCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>アップロードを実行</button>
               </div>
 
               {/* ── Section 2: 別フォーマット ── */}
