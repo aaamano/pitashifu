@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import TopPage from './pages/TopPage'
+import NotFound from './pages/NotFound'
 import ManagerLayout from './components/ManagerLayout'
 import EmployeeLayout from './components/EmployeeLayout'
 import Dashboard from './pages/manager/Dashboard'
@@ -49,7 +50,13 @@ export default function App() {
           <Route path="sukima/:id" element={<SukimaDetail />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" />} />
+        {/* Backward-compat: redirect old top-level paths to /pitashif/ */}
+        <Route path="/manager/*"        element={<Navigate to="/pitashif/manager" replace />} />
+        <Route path="/employee/*"       element={<Navigate to="/pitashif/employee" replace />} />
+        <Route path="/employee-ver2/*"  element={<Navigate to="/pitashif/employee-ver2" replace />} />
+
+        {/* 404 — replaces silent redirect so route mismatches are visible */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   )
