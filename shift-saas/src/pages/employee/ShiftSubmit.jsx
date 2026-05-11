@@ -304,7 +304,7 @@ export default function ShiftSubmit({ base = '/pitashif/employee', sukima = fals
       <div className="pita-phone-header">
         <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{ME.name[0]}</div>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:'var(--pita-text)' }}>シフト提出</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--pita-text)' }}>シフト管理</div>
           <div style={{ fontSize:10, color:'var(--pita-muted)', marginTop:1 }}>{YEAR_MONTH}</div>
         </div>
         <button onClick={openNew} style={{ fontSize:11, height:32, padding:'0 14px', borderRadius:16, border:'none', background:'#5B67F8', color:'white', fontWeight:600, cursor:'pointer' }}>+ 新規作成</button>

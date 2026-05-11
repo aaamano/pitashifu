@@ -576,21 +576,17 @@ body {
 .emp-frame {
   width: 100%;
   max-width: 390px;
-  min-height: 100vh;
+  height: 100svh;
   background: #F8FAFC;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   box-shadow: 0 0 60px rgba(79,70,229,0.20);
 }
-/* SP: full width, no desktop chrome, tab bar always locked at bottom */
+/* SP: full width, no desktop chrome */
 @media (max-width: 768px) {
   .emp-stage { background: var(--pita-bg); align-items: stretch; }
-  .emp-frame {
-    max-width: 100%;
-    box-shadow: none;
-    height: 100svh;      /* exact viewport — prevents overflow / tab-bar scroll-away */
-    overflow: hidden;
-  }
+  .emp-frame { max-width: 100%; box-shadow: none; }
 }
 
 /* ── Mobile: phone-stage shows only inner content ── */

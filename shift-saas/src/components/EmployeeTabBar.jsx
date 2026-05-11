@@ -53,7 +53,7 @@ export default function EmployeeTabBar({ base = '/pitashif/employee', sukima = f
 
   const tabs = [
     { id:'schedule',      to: base,                     label:'スケジュール', Icon: IconCal    },
-    { id:'submit',        to: `${base}/submit`,          label:'シフト提出',   Icon: IconFile   },
+    { id:'submit',        to: `${base}/submit`,          label:'シフト管理',   Icon: IconFile   },
     ...(sukima ? [{ id:'sukima', to:`${base}/sukima`, label:'スキマ', Icon: IconBolt }] : []),
     { id:'notifications', to: `${base}/notifications`,  label:'通知',         Icon: IconBell   },
     { id:'settings',      to: `${base}/settings`,       label:'設定',         Icon: IconPerson },
@@ -62,8 +62,7 @@ export default function EmployeeTabBar({ base = '/pitashif/employee', sukima = f
   return (
     <div style={{
       display:'flex', background:'white', borderTop:'1px solid #F3F4F6', flexShrink:0,
-      paddingBottom:'max(8px, env(safe-area-inset-bottom, 8px))',
-      position:'sticky', bottom:0, zIndex:10,
+      paddingBottom:'env(safe-area-inset-bottom, 0px)',
     }}>
       {tabs.map(({ id, to, label, Icon }) => {
         const on = active === id
