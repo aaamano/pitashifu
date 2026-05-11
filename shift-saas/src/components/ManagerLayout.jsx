@@ -142,7 +142,7 @@ export default function ManagerLayout() {
           <a href="/" style={{ fontSize:12, color:'#A5B4FC', textDecoration:'none', display:'flex', alignItems:'center', gap:6 }}>
             ← TOP に戻る
           </a>
-          <div style={{ fontSize:10, color:'#6366F1', marginTop:6, opacity:0.7 }}>v1.0 — シフト管理をピタッと</div>
+          <div style={{ fontSize:10, color:'#6366F1', marginTop:6, opacity:0.7 }}>v1.1 — ピタシフ Build {__BUILD_TS__}</div>
         </div>
       </aside>
 
