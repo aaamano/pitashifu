@@ -40,7 +40,7 @@ export default function SukimaDetail() {
   return (
     <>
       <div className="pita-phone-header">
-        <Link to="/employee-ver2/sukima" style={{ fontSize:12, color:'var(--pita-accent)', textDecoration:'none', fontWeight:600 }}>← 一覧</Link>
+        <Link to="/pitashif/employee-ver2/sukima" style={{ fontSize:12, color:'var(--pita-accent)', textDecoration:'none', fontWeight:600 }}>← 一覧</Link>
         <div style={{ flex:1, textAlign:'center', fontSize:12, fontWeight:700, color:'var(--pita-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', padding:'0 4px' }}>{job.store}：{job.role}</div>
         <div style={{ width:40 }} />
       </div>
@@ -112,7 +112,7 @@ export default function SukimaDetail() {
         )}
       </div>
 
-      <EmployeeTabBar base="/employee-ver2" active="sukima" sukima={true} />
+      <EmployeeTabBar base="/pitashif/employee-ver2" active="sukima" sukima={true} />
 
       {/* Success toast */}
       {showSuccess && (

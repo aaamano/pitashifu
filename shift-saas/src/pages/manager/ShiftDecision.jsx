@@ -477,7 +477,7 @@ export default function ShiftDecision() {
         <div>
           <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
             <button
-              onClick={() => navigate('/manager/shift')}
+              onClick={() => navigate('/pitashif/manager/shift')}
               style={{ background:'none', border:'none', color:'#6366f1', fontSize:11, fontWeight:600, cursor:'pointer', padding:0, fontFamily:'inherit' }}
             >
               ← バージョン一覧

@@ -242,11 +242,11 @@ export default function ShiftEdit() {
 
             {/* Tab bar */}
             <div className="pita-phone-tabbar">
-              <Link to="/employee" className="pita-tab-item">
+              <Link to="/pitashif/employee" className="pita-tab-item">
                 <span className="pita-tab-ico">📅</span>
                 シフト
               </Link>
-              <Link to="/employee/edit" className="pita-tab-item active">
+              <Link to="/pitashif/employee/edit" className="pita-tab-item active">
                 <span className="pita-tab-ico">✏️</span>
                 希望
               </Link>

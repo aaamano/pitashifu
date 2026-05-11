@@ -48,10 +48,10 @@ export default function Dashboard() {
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pita-text)', letterSpacing: '-0.01em' }}>{YEAR_MONTH} 前半 — ダッシュボード</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/manager/targets" className="mgr-btn-secondary" style={{ textDecoration: 'none' }}>
+          <Link to="/pitashif/manager/targets" className="mgr-btn-secondary" style={{ textDecoration: 'none' }}>
             目標設定 →
           </Link>
-          <Link to="/manager/shift" className="mgr-btn-primary" style={{ textDecoration: 'none' }}>
+          <Link to="/pitashif/manager/shift" className="mgr-btn-primary" style={{ textDecoration: 'none' }}>
             シフト決定 →
           </Link>
         </div>

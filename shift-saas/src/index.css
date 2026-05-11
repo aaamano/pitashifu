@@ -2,26 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Pitashifu design tokens ── */
+/* ── ピタシフ Design System tokens ── */
 :root {
-  --pita-bg: #fafaf9;
-  --pita-bg-subtle: #f4f4f2;
-  --pita-panel: #ffffff;
-  --pita-hover: #f0efed;
-  --pita-border: #e6e5e2;
-  --pita-border-strong: #d1d0cc;
-  --pita-text: #1a1a18;
-  --pita-muted: #6b6a66;
-  --pita-faint: #9a9995;
-  --pita-accent: #2ea882;
-  --pita-accent-soft: #e8f5f1;
-  --pita-accent-text: #1a5c44;
-  --pita-shift-work: #5fb89e;
-  --pita-shift-soft: #eaf5f1;
-  --pita-shift-full: #c4a438;
-  --pita-shift-full-soft: #f5f0d8;
-  --pita-warn: #d4752a;
-  --pita-ok: #2c9a5c;
+  /* Brand palette */
+  --pita-indigo:        #4F46E5;
+  --pita-indigo-deep:   #3730A3;
+  --pita-indigo-soft:   #EEF0FE;
+  --pita-sky:           #38BDF8;
+  --pita-sky-soft:      #E0F2FE;
+  --pita-coral:         #FF6B6B;
+  --pita-coral-soft:    #FFE5E5;
+
+  /* Surface */
+  --pita-bg:            #F8FAFC;
+  --pita-bg-subtle:     #F1F5F9;
+  --pita-panel:         #FFFFFF;
+  --pita-hover:         #EEF0FE;
+  --pita-border:        #E2E8F0;
+  --pita-border-strong: #CBD5E1;
+
+  /* Text */
+  --pita-text:          #0F172A;
+  --pita-muted:         #475569;
+  --pita-faint:         #94A3B8;
+
+  /* Semantic */
+  --pita-accent:        #4F46E5;
+  --pita-accent-soft:   #EEF0FE;
+  --pita-accent-text:   #3730A3;
+  --pita-shift-work:    #4F46E5;
+  --pita-shift-soft:    #EEF0FE;
+  --pita-shift-full:    #38BDF8;
+  --pita-shift-full-soft: #E0F2FE;
+  --pita-warn:          #F59E0B;
+  --pita-ok:            #10B981;
+  --pita-danger:        #FF6B6B;
+
+  /* Shadows */
+  --pita-shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
+  --pita-shadow-md: 0 4px 8px rgba(15,23,42,0.05), 0 2px 4px rgba(15,23,42,0.04);
+  --pita-shadow-lg: 0 12px 32px rgba(79,70,229,0.12), 0 4px 12px rgba(15,23,42,0.06);
+
+  /* Radius */
+  --pita-radius-sm: 6px;
+  --pita-radius:    10px;
+  --pita-radius-lg: 14px;
+
+  --font-jp: "Noto Sans JP", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 
@@ -29,8 +56,11 @@
 
 body {
   margin: 0;
-  font-family: "Inter", "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+  font-family: var(--font-jp);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--pita-text);
+  background: var(--pita-bg);
 }
 
 /* ── Phone stage (employee pages) ── */
@@ -343,24 +373,25 @@ body {
   );
 }
 
-/* ── Manager portal theme ── */
+/* ── Manager portal theme (uses brand tokens) ── */
 .mgr-wrap {
-  --pita-bg: #f0f5f9;
-  --pita-bg-subtle: #e8edf4;
-  --pita-panel: #ffffff;
-  --pita-hover: #eef4fb;
-  --pita-border: #dde5f0;
-  --pita-border-strong: #c4d0e2;
-  --pita-text: #0f172a;
-  --pita-muted: #475569;
-  --pita-faint: #64748b;
-  --pita-accent: #4f46e5;
-  --pita-accent-soft: #eef2ff;
-  --pita-accent-text: #3730a3;
-  --pita-shift-work: #818cf8;
-  --pita-shift-soft: #eef2ff;
-  --pita-ok: #10b981;
-  --pita-warn: #f59e0b;
+  --pita-bg:           #F8FAFC;
+  --pita-bg-subtle:    #F1F5F9;
+  --pita-panel:        #FFFFFF;
+  --pita-hover:        #EEF0FE;
+  --pita-border:       #E2E8F0;
+  --pita-border-strong:#CBD5E1;
+  --pita-text:         #0F172A;
+  --pita-muted:        #475569;
+  --pita-faint:        #94A3B8;
+  --pita-accent:       #4F46E5;
+  --pita-accent-soft:  #EEF0FE;
+  --pita-accent-text:  #3730A3;
+  --pita-shift-work:   #4F46E5;
+  --pita-shift-soft:   #EEF0FE;
+  --pita-shift-full:   #38BDF8;
+  --pita-ok:           #10B981;
+  --pita-warn:         #F59E0B;
 }
 /* Unified font: no monospace in manager pages */
 .mgr-wrap table,
@@ -432,21 +463,24 @@ body {
 .mgr-btn-primary {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 8px 18px;
-  background: #4f46e5;
+  gap: 6px;
+  padding: 9px 20px;
+  background: var(--pita-indigo);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--pita-radius);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.15s;
+  letter-spacing: 0.01em;
+  transition: background .15s, transform .08s, box-shadow .15s;
   text-decoration: none;
   white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 4px 12px rgba(79,70,229,0.18);
 }
-.mgr-btn-primary:hover { background: #4338ca; }
+.mgr-btn-primary:hover { background: var(--pita-indigo-deep); }
+.mgr-btn-primary:active { transform: translateY(1px); }
 .mgr-btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -499,42 +533,42 @@ body {
 .pita-skill-cashier { background: #cffafe; color: #0e7490; }
 .pita-skill-floor   { background: #f1f5f9; color: #475569; }
 
-/* ── Employee portal design system ── */
+/* ── Employee portal design system (uses brand tokens) ── */
 .emp-wrap {
-  --pita-accent: #5B67F8;
-  --pita-accent-soft: #eef0fe;
-  --pita-accent-text: #3730a3;
-  --pita-bg: #f9fafb;
-  --pita-bg-subtle: #f3f4f6;
-  --pita-panel: #ffffff;
-  --pita-hover: #f3f4f6;
-  --pita-border: #e5e7eb;
-  --pita-border-strong: #d1d5db;
-  --pita-text: #111827;
-  --pita-muted: #6b7280;
-  --pita-faint: #9ca3af;
-  --pita-shift-work: #818cf8;
-  --pita-shift-soft: #eef0fe;
-  --pita-ok: #10b981;
-  --pita-warn: #f59e0b;
+  --pita-accent:       #4F46E5;
+  --pita-accent-soft:  #EEF0FE;
+  --pita-accent-text:  #3730A3;
+  --pita-bg:           #F8FAFC;
+  --pita-bg-subtle:    #F1F5F9;
+  --pita-panel:        #FFFFFF;
+  --pita-hover:        #EEF0FE;
+  --pita-border:       #E2E8F0;
+  --pita-border-strong:#CBD5E1;
+  --pita-text:         #0F172A;
+  --pita-muted:        #475569;
+  --pita-faint:        #94A3B8;
+  --pita-shift-work:   #4F46E5;
+  --pita-shift-soft:   #EEF0FE;
+  --pita-ok:           #10B981;
+  --pita-warn:         #F59E0B;
 }
-.emp-wrap .pita-mode-chip         { background: #5B67F8; color: white; }
-.emp-wrap .pita-mode-chip.editing { background: #f59e0b; color: white; }
+.emp-wrap .pita-mode-chip         { background: var(--pita-indigo); color: white; }
+.emp-wrap .pita-mode-chip.editing { background: var(--pita-warn);   color: white; }
 .emp-wrap .pita-shift-grid,
 .emp-wrap .pita-shift-grid th,
 .emp-wrap .pita-shift-grid td,
 .emp-wrap .pita-code              { font-family: inherit; }
 .emp-wrap .pita-status-bar        { font-family: inherit; }
-.emp-wrap .pita-summary-row       { color: #374151; font-size: 12px; }
-.emp-wrap .pita-summary-row strong { color: #111827; }
-.emp-wrap .pita-btn.accent        { background: #5B67F8; border-color: #5B67F8; }
-.emp-wrap .pita-cell-work         { background: #818cf8 !important; }
-.emp-wrap .pita-phone-header      { background: #ffffff; border-color: #e5e7eb; }
+.emp-wrap .pita-summary-row       { color: #334155; font-size: 12px; }
+.emp-wrap .pita-summary-row strong { color: var(--pita-text); }
+.emp-wrap .pita-btn.accent        { background: var(--pita-indigo); border-color: var(--pita-indigo); }
+.emp-wrap .pita-cell-work         { background: var(--pita-indigo) !important; }
+.emp-wrap .pita-phone-header      { background: #ffffff; border-color: var(--pita-border); }
 
 /* ── Employee layout stage + frame ── */
 .emp-stage {
   min-height: 100vh;
-  background: #dde3ff;
+  background: linear-gradient(135deg, #EEF0FE 0%, #E0F2FE 100%);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -543,10 +577,10 @@ body {
   width: 100%;
   max-width: 390px;
   min-height: 100vh;
-  background: #f9fafb;
+  background: #F8FAFC;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 0 40px rgba(91,103,248,0.18);
+  box-shadow: 0 0 60px rgba(79,70,229,0.20);
 }
 /* SP: full width, no desktop chrome */
 @media (max-width: 480px) {

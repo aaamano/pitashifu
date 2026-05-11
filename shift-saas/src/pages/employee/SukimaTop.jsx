@@ -126,7 +126,7 @@ export default function SukimaTop() {
         </svg>
         <div style={{ padding:'8px 10px', display:'flex', flexDirection:'column', gap:5 }}>
           {dayJobs.map(j => (
-            <Link key={j.id} to={`/employee-ver2/sukima/${j.id}`} style={{ textDecoration:'none' }}>
+            <Link key={j.id} to={`/pitashif/employee-ver2/sukima/${j.id}`} style={{ textDecoration:'none' }}>
               <div style={{ background:'white', borderRadius:10, padding:'8px 10px', display:'flex', alignItems:'center', gap:8, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
                 <div style={{ width:32, height:32, borderRadius:8, background:j.bgColor, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{j.emoji}</div>
                 <div style={{ flex:1 }}>
@@ -139,7 +139,7 @@ export default function SukimaTop() {
           ))}
         </div>
       </div>
-      <EmployeeTabBar base="/employee-ver2" sukima={true} />
+      <EmployeeTabBar base="/pitashif/employee-ver2" sukima={true} />
     </>
   )
 
@@ -281,7 +281,7 @@ export default function SukimaTop() {
             </div>
           )}
           {dayJobs.map(j => (
-            <Link key={j.id} to={`/employee-ver2/sukima/${j.id}`} style={{ textDecoration:'none', display:'block', marginBottom:8 }}>
+            <Link key={j.id} to={`/pitashif/employee-ver2/sukima/${j.id}`} style={{ textDecoration:'none', display:'block', marginBottom:8 }}>
               <div style={{ background:'white', borderRadius:12, border:'1px solid #e5e7eb', overflow:'hidden', display:'flex' }}>
                 <div style={{ width:88, flexShrink:0, background:j.bgColor, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', position:'relative', minHeight:100 }}>
                   <span style={{ fontSize:30 }}>{j.emoji}</span>
@@ -304,7 +304,7 @@ export default function SukimaTop() {
         </div>
       </div>
 
-      <EmployeeTabBar base="/employee-ver2" sukima={true} />
+      <EmployeeTabBar base="/pitashif/employee-ver2" sukima={true} />
 
       {/* Filter bottom sheet */}
       {filterSheet && activeSheetOpt && (

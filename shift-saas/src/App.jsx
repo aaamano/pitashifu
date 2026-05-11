@@ -23,7 +23,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<TopPage />} />
 
-        <Route path="/manager" element={<ManagerLayout />}>
+        <Route path="/pitashif/manager" element={<ManagerLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="targets" element={<Targets />} />
           <Route path="shift" element={<ShiftList />} />
@@ -35,16 +35,16 @@ export default function App() {
           <Route path="notifications" element={<ManagerNotifications />} />
         </Route>
 
-        <Route path="/employee" element={<EmployeeLayout />}>
+        <Route path="/pitashif/employee" element={<EmployeeLayout />}>
           <Route index element={<Schedule />} />
           <Route path="submit" element={<ShiftSubmit />} />
           <Route path="notifications" element={<EmployeeNotifications />} />
         </Route>
 
-        <Route path="/employee-ver2" element={<EmployeeLayout />}>
-          <Route index element={<Schedule base="/employee-ver2" sukima={true} />} />
-          <Route path="submit" element={<ShiftSubmit base="/employee-ver2" sukima={true} />} />
-          <Route path="notifications" element={<EmployeeNotifications base="/employee-ver2" sukima={true} />} />
+        <Route path="/pitashif/employee-ver2" element={<EmployeeLayout />}>
+          <Route index element={<Schedule base="/pitashif/employee-ver2" sukima={true} />} />
+          <Route path="submit" element={<ShiftSubmit base="/pitashif/employee-ver2" sukima={true} />} />
+          <Route path="notifications" element={<EmployeeNotifications base="/pitashif/employee-ver2" sukima={true} />} />
           <Route path="sukima" element={<SukimaTop />} />
           <Route path="sukima/:id" element={<SukimaDetail />} />
         </Route>

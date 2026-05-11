@@ -9,7 +9,7 @@ const TYPE_CONFIG = {
   info:      { bg: 'bg-slate-100',   icon: 'ℹ️', label: 'お知らせ' },
 }
 
-export default function EmployeeNotifications({ base = '/employee', sukima = false }) {
+export default function EmployeeNotifications({ base = '/pitashif/employee', sukima = false }) {
   const [items, setItems] = useState(employeeNotifications)
 
   const markRead = (id) => setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))

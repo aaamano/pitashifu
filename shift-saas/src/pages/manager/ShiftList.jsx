@@ -218,7 +218,7 @@ export default function ShiftList() {
                   {/* Edit button */}
                   <td style={{ padding:'12px 14px', textAlign:'center', borderBottom:B }}>
                     <button
-                      onClick={() => navigate(`/manager/shift/${v.id}`)}
+                      onClick={() => navigate(`/pitashif/manager/shift/${v.id}`)}
                       style={{
                         padding:'6px 14px', borderRadius:6, border:'none',
                         background:'#4f46e5', color:'white', fontSize:12, fontWeight:600,

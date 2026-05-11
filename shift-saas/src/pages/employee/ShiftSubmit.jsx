@@ -45,7 +45,7 @@ function toCode(sh, eh) {
   return `${sh}-${eh}`
 }
 
-export default function ShiftSubmit({ base = '/employee', sukima = false }) {
+export default function ShiftSubmit({ base = '/pitashif/employee', sukima = false }) {
   const [submissions, setSubmissions] = useState(initialSubmissions)
   const [mode, setMode]               = useState('list')
 

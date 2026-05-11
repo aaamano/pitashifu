@@ -27,7 +27,7 @@ const STATUS = {
 const STATUS_PRIORITY = { confirmed: 0, submitted: 1, draft: 2 }
 const latest = shiftSubmissions.slice().sort((a, b) => STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status])[0]
 
-export default function Schedule({ base = '/employee', sukima = false }) {
+export default function Schedule({ base = '/pitashif/employee', sukima = false }) {
   const sub      = latest
   const cfg      = STATUS[sub?.status] || STATUS.draft
   const shiftRow = sub?.shiftRow || Array(15).fill('X')

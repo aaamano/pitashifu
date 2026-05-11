@@ -33,7 +33,7 @@ const IconBell = ({ on }) => (
   </svg>
 )
 
-export default function EmployeeTabBar({ base = '/employee', sukima = false }) {
+export default function EmployeeTabBar({ base = '/pitashif/employee', sukima = false }) {
   const { pathname } = useLocation()
 
   const getActive = () => {

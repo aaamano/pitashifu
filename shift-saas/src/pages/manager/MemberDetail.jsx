@@ -18,7 +18,7 @@ export default function MemberDetail() {
       <div className="mgr-page" style={{ textAlign:'center', color:'#94a3b8', paddingTop:64 }}>
         <div style={{ fontSize:40, marginBottom:12 }}>🔍</div>
         <div style={{ fontSize:14 }}>メンバーが見つかりません</div>
-        <Link to="/manager/members" style={{ color:'#4f46e5', textDecoration:'none', fontSize:13, display:'inline-block', marginTop:8 }}>← 一覧に戻る</Link>
+        <Link to="/pitashif/manager/members" style={{ color:'#4f46e5', textDecoration:'none', fontSize:13, display:'inline-block', marginTop:8 }}>← 一覧に戻る</Link>
       </div>
     )
   }
@@ -39,7 +39,7 @@ export default function MemberDetail() {
     <div className="mgr-page">
       {/* Back + header */}
       <div style={{ marginBottom:24 }}>
-        <Link to="/manager/members" style={{ fontSize:12, color:'#64748b', textDecoration:'none', display:'inline-flex', alignItems:'center', gap:4, marginBottom:14 }}>
+        <Link to="/pitashif/manager/members" style={{ fontSize:12, color:'#64748b', textDecoration:'none', display:'inline-flex', alignItems:'center', gap:4, marginBottom:14 }}>
           ← メンバー一覧
         </Link>
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
@@ -57,7 +57,7 @@ export default function MemberDetail() {
               </div>
             </div>
           </div>
-          <Link to="/manager/members" className="mgr-btn-primary" style={{ textDecoration:'none' }}>
+          <Link to="/pitashif/manager/members" className="mgr-btn-primary" style={{ textDecoration:'none' }}>
             編集する
           </Link>
         </div>
