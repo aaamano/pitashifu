@@ -60,20 +60,8 @@ export default function Schedule({ base = '/pitashif/employee', sukima = false }
   return (
     <>
       {/* Header */}
-      <div className="pita-phone-header">
-        <div style={{
-          width: 34, height: 34, borderRadius: '50%',
-          background: INDIGO, color: 'white',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 13, fontWeight: 700, flexShrink: 0,
-        }}>
-          {ME.name[0]}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>スケジュール</div>
-          <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>{ME.name}さん</div>
-        </div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: INDIGO }}>{YEAR_MONTH}</div>
+      <div className="pita-phone-header" style={{ justifyContent: 'center' }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: '#0F172A' }}>{YEAR_MONTH}</div>
       </div>
 
       <div className="pita-phone-body">

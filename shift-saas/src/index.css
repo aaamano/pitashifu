@@ -127,7 +127,9 @@ body {
 }
 .pita-phone-body {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: var(--pita-bg);
   position: relative;
 }
