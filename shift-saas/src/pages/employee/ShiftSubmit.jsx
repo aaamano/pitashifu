@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useRef, useEffect } from 'react'
 import { staff, daysConfig, YEAR_MONTH, shiftSubmissions as initialSubmissions } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
+import { api } from '../../api/index.js'
 
 const ME = staff[0]
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8)
@@ -24,38 +24,121 @@ const STATUS_BADGE = {
 }
 const badgeStyle = (status) => ({ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:10, whiteSpace:'nowrap', ...STATUS_BADGE[status] })
 
+// Resolve which cell (di, h) is under a touch point
+function getCellFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y)
+  if (!el) return null
+  let target = el
+  while (target && target.dataset?.di === undefined) target = target.parentElement
+  if (!target || !target.dataset) return null
+  const di = parseInt(target.dataset.di)
+  const h  = parseInt(target.dataset.h)
+  if (isNaN(di) || isNaN(h)) return null
+  return { di, h }
+}
+
+// Convert shift hours to code string
+function toCode(sh, eh) {
+  if (sh === 9 && eh === 18) return 'F'
+  if (sh === 9) return `O-${eh}`
+  if (eh === 22) return `${sh}-L`
+  return `${sh}-${eh}`
+}
+
 export default function ShiftSubmit({ base = '/employee', sukima = false }) {
   const [submissions, setSubmissions] = useState(initialSubmissions)
-  const [mode, setMode] = useState('list')
-  const [active, setActive] = useState(null)
-  const [editRow, setEditRow] = useState([])
-  const [previewRange, setPreviewRange] = useState(null)
-  const dragging = useRef(false)
-  const startCell = useRef(null)
-  const selectVal = useRef(null)
+  const [mode, setMode]               = useState('list')
 
-  const openEdit = (sub) => {
-    setActive(sub)
-    setEditRow([...sub.shiftRow])
-    setMode('edit')
+  // Load from DB on mount
+  useEffect(() => {
+    api.getSubmissions(ME.id)
+      .then(data => { if (data?.length) setSubmissions(data) })
+      .catch(() => {})
+  }, [])
+  const [active, setActive]           = useState(null)
+  const [editRow, setEditRow]         = useState([])
+  const [previewRange, setPreviewRange] = useState(null)
+
+  // Mouse drag refs
+  const dragging    = useRef(false)
+  const startCell   = useRef(null)
+  const selectVal   = useRef(null)
+
+  // Touch drag refs (separate to avoid cross-contamination)
+  const touchActive  = useRef(false)
+  const touchStart   = useRef(null)
+  const touchSelVal  = useRef(null)
+  const editRowRef   = useRef([])
+  const tableRef     = useRef(null)
+
+  // Keep editRowRef in sync
+  useEffect(() => { editRowRef.current = editRow }, [editRow])
+
+  // Attach non-passive touchmove so we can preventDefault (stops page scroll during drag)
+  useEffect(() => {
+    const el = tableRef.current
+    if (!el) return
+    const handleTouchMove = (e) => {
+      if (!touchActive.current) return
+      e.preventDefault()
+      const touch = e.touches[0]
+      const cell = getCellFromPoint(touch.clientX, touch.clientY)
+      if (!cell || !touchStart.current || cell.di !== touchStart.current.di) return
+      setPreviewRange({ di: cell.di, startH: touchStart.current.h, endH: cell.h })
+    }
+    el.addEventListener('touchmove', handleTouchMove, { passive: false })
+    return () => el.removeEventListener('touchmove', handleTouchMove)
+  }, [mode]) // re-attach when mode changes (new DOM)
+
+  const commitRange = (pr, selVal) => {
+    if (!pr) return
+    const lo = Math.min(pr.startH, pr.endH)
+    const hi = Math.max(pr.startH, pr.endH)
+    setEditRow(prev => {
+      const next = [...prev]
+      if (selVal === 'erase') { next[pr.di] = 'X' }
+      else { next[pr.di] = toCode(lo, hi + 1) }
+      editRowRef.current = next
+      return next
+    })
+    setPreviewRange(null)
   }
-  const openNew = () => {
-    const newSub = { id: Date.now(), period: '2026年5月 後半', submittedAt: null, lastEditedAt: null, status: 'draft', shiftRow: Array(15).fill('X') }
-    setActive(newSub)
-    setEditRow(Array(15).fill('X'))
-    setMode('edit')
+
+  // ── Mouse handlers ──
+  const onMouseDown = (di, h) => {
+    dragging.current = true; startCell.current = { di, h }
+    const ex = parseCode(editRow[di])
+    selectVal.current = ex && h >= ex.start && h < ex.end ? 'erase' : 'draw'
+    setPreviewRange({ di, startH: h, endH: h })
   }
-  const saveDraft = () => {
-    const now = new Date().toLocaleString('ja-JP').replace(/\//g,'-').slice(0,16)
-    const updated = { ...active, shiftRow: [...editRow], lastEditedAt: now, status: active.status === 'confirmed' ? 'confirmed' : 'draft' }
-    setSubmissions(prev => prev.find(s => s.id === active.id) ? prev.map(s => s.id === active.id ? updated : s) : [...prev, updated])
-    setMode('list')
+  const onMouseEnter = (di, h) => {
+    if (!dragging.current || !startCell.current || startCell.current.di !== di) return
+    setPreviewRange({ di, startH: startCell.current.h, endH: h })
   }
-  const submitShift = () => {
-    const now = new Date().toLocaleString('ja-JP').replace(/\//g,'-').slice(0,16)
-    const updated = { ...active, shiftRow: [...editRow], submittedAt: now, lastEditedAt: now, status: 'submitted' }
-    setSubmissions(prev => prev.find(s => s.id === active.id) ? prev.map(s => s.id === active.id ? updated : s) : [...prev, updated])
-    setMode('list')
+  const onMouseUp = () => {
+    if (!dragging.current) return
+    dragging.current = false
+    commitRange(previewRange, selectVal.current)
+    startCell.current = null; selectVal.current = null
+  }
+
+  // ── Touch handlers ──
+  const onTouchStart = (e, di, h) => {
+    // Don't preventDefault here — let it bubble so scrolling still works outside drag
+    touchActive.current = true
+    touchStart.current  = { di, h }
+    const ex = parseCode(editRowRef.current[di])
+    touchSelVal.current = ex && h >= ex.start && h < ex.end ? 'erase' : 'draw'
+    setPreviewRange({ di, startH: h, endH: h })
+  }
+  const onTouchEnd = () => {
+    if (!touchActive.current) return
+    touchActive.current = false
+    setPreviewRange(pr => {
+      commitRange(pr, touchSelVal.current)
+      return null
+    })
+    touchStart.current = null; touchSelVal.current = null
   }
 
   const isInPreview = (di, h) => {
@@ -64,31 +147,40 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
     const hi = Math.max(previewRange.startH, previewRange.endH)
     return h >= lo && h <= hi
   }
-  const onDown = (di, h) => {
-    dragging.current = true; startCell.current = { di, h }
-    const ex = parseCode(editRow[di]); selectVal.current = ex && h >= ex.start && h < ex.end ? 'erase' : 'draw'
-    setPreviewRange({ di, startH: h, endH: h })
+
+  const openEdit = (sub) => { setActive(sub); setEditRow([...sub.shiftRow]); setMode('edit') }
+  const openNew  = () => {
+    const s = { _isNew: true, id: Date.now(), period: '2026年5月 後半', submittedAt: null, lastEditedAt: null, status: 'draft', shiftRow: Array(15).fill('X') }
+    setActive(s); setEditRow(Array(15).fill('X')); setMode('edit')
   }
-  const onEnter = (di, h) => {
-    if (!dragging.current || !startCell.current || startCell.current.di !== di) return
-    setPreviewRange({ di, startH: startCell.current.h, endH: h })
+  const saveDraft = async () => {
+    const now = new Date().toLocaleString('ja-JP').replace(/\//g,'-').slice(0,16)
+    const base = { staffId: ME.id, period: active.period, shiftRow: [...editRow], lastEditedAt: now, status: active.status === 'confirmed' ? 'confirmed' : 'draft' }
+    if (active._isNew) {
+      const created = await api.createSubmission({ ...base, submittedAt: null }).catch(() => null)
+      const u = created || { ...active, ...base }
+      setSubmissions(prev => [...prev, u])
+    } else {
+      api.updateSubmission(active.id, base).catch(() => {})
+      setSubmissions(prev => prev.map(s => s.id === active.id ? { ...s, ...base } : s))
+    }
+    setMode('list')
   }
-  const onUp = (di, h) => {
-    if (!dragging.current) return; dragging.current = false
-    const pr = previewRange; if (!pr || pr.di !== di) { setPreviewRange(null); return }
-    const lo = Math.min(pr.startH, pr.endH), hi = Math.max(pr.startH, pr.endH)
-    setEditRow(prev => {
-      const next = [...prev]
-      if (selectVal.current === 'erase') { next[di] = 'X' }
-      else {
-        const sh = lo, eh = hi + 1
-        next[di] = sh === 9 && eh === 18 ? 'F' : sh === 9 ? `O-${eh}` : eh === 22 ? `${sh}-L` : `${sh}-${eh}`
-      }
-      return next
-    })
-    setPreviewRange(null); startCell.current = null; selectVal.current = null
+  const submitShift = async () => {
+    const now = new Date().toLocaleString('ja-JP').replace(/\//g,'-').slice(0,16)
+    const base = { staffId: ME.id, period: active.period, shiftRow: [...editRow], submittedAt: now, lastEditedAt: now, status: 'submitted' }
+    if (active._isNew) {
+      const created = await api.createSubmission(base).catch(() => null)
+      const u = created || { ...active, ...base }
+      setSubmissions(prev => [...prev, u])
+    } else {
+      api.updateSubmission(active.id, base).catch(() => {})
+      setSubmissions(prev => prev.map(s => s.id === active.id ? { ...s, ...base } : s))
+    }
+    setMode('list')
   }
 
+  // ── Confirmed view (read-only) ──
   if (mode === 'edit' && active.status === 'confirmed') return (
     <>
       <div className="pita-phone-header">
@@ -113,10 +205,9 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
                 return (
                   <tr key={d.day}>
                     <td className="pita-time-col" style={{ color: d.isWeekend ? '#dc2626' : 'var(--pita-text)', fontSize:9 }}>{d.day}/{d.dow}</td>
-                    {HOURS.map(h => {
-                      const inShift = shift && h >= shift.start && h < shift.end
-                      return <td key={h} className={inShift ? 'pita-cell-work' : 'pita-cell-off'} style={{ cursor:'default' }} />
-                    })}
+                    {HOURS.map(h => (
+                      <td key={h} className={shift && h >= shift.start && h < shift.end ? 'pita-cell-work' : 'pita-cell-off'} style={{ cursor:'default' }} />
+                    ))}
                   </tr>
                 )
               })}
@@ -124,41 +215,70 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
           </table>
         </div>
       </div>
-      <EmployeeTabBar base={base} active="submit" sukima={sukima} />
+      <EmployeeTabBar base={base} sukima={sukima} />
     </>
   )
 
+  // ── Edit mode ──
   if (mode === 'edit') return (
     <>
       <div className="pita-phone-header">
         <button onClick={() => setMode('list')} style={{ fontSize:12, color:'#5B67F8', background:'none', border:'none', cursor:'pointer', padding:'0 4px', fontWeight:600 }}>← 戻る</button>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:13, fontWeight:700, color:'var(--pita-text)' }}>{active.period}</div>
-          <div style={{ fontSize:9, color:'var(--pita-muted)' }}>シフト提出</div>
+          <div style={{ fontSize:9, color:'var(--pita-muted)' }}>タップ&ドラッグでシフト入力</div>
         </div>
         <span style={badgeStyle(active.status)}>{STATUS_LABEL[active.status]}</span>
       </div>
       <div className="pita-mode-bar">
         <span className="pita-mode-chip editing">編集中</span>
-        <span style={{ fontSize:9, color:'var(--pita-muted)' }}>ドラッグでシフト入力</span>
+        <span style={{ fontSize:9, color:'var(--pita-muted)' }}>行を横にドラッグして時間を選択</span>
       </div>
-      <div className="pita-phone-body" onMouseLeave={() => { if (dragging.current) { dragging.current = false; setPreviewRange(null) } }}>
+
+      {/* Grid: larger cells for touch (40×40px) */}
+      <div
+        className="pita-phone-body"
+        ref={tableRef}
+        onMouseLeave={() => { if (dragging.current) { dragging.current = false; setPreviewRange(null) } }}
+        onMouseUp={onMouseUp}
+        onTouchEnd={onTouchEnd}
+      >
         <div style={{ overflowX:'auto' }}>
           <table className="pita-shift-grid" style={{ userSelect:'none' }}>
-            <thead><tr><th className="pita-time-col">日</th>{HOURS.map(h => <th key={h}>{h}</th>)}</tr></thead>
+            <thead>
+              <tr>
+                <th className="pita-time-col" style={{ width:36, fontSize:9 }}>日</th>
+                {HOURS.map(h => <th key={h} style={{ width:40, height:36, fontSize:11 }}>{h}</th>)}
+              </tr>
+            </thead>
             <tbody>
               {daysConfig.map((d, di) => {
                 const shift = parseCode(editRow[di])
                 return (
                   <tr key={d.day}>
-                    <td className="pita-time-col" style={{ color: d.isWeekend ? '#dc2626' : 'var(--pita-text)', fontSize:9 }}>{d.day}/{d.dow}</td>
+                    <td
+                      className="pita-time-col"
+                      style={{ color: d.isWeekend ? '#dc2626' : 'var(--pita-text)', fontSize:9, width:36 }}
+                    >
+                      {d.day}<br/><span style={{ fontSize:8 }}>{d.dow}</span>
+                    </td>
                     {HOURS.map(h => {
-                      const inShift = shift && h >= shift.start && h < shift.end
-                      const inPrev = isInPreview(di, h)
-                      let cls = 'pita-cell-off'
-                      if (inPrev) cls = selectVal.current === 'erase' ? 'pita-cell-off' : 'pita-cell-select'
-                      else if (inShift) cls = 'pita-cell-work'
-                      return <td key={h} className={cls} style={{ cursor:'crosshair' }} onMouseDown={() => onDown(di, h)} onMouseEnter={() => onEnter(di, h)} onMouseUp={() => onUp(di, h)} />
+                      const inShift  = shift && h >= shift.start && h < shift.end
+                      const inPrev   = isInPreview(di, h)
+                      let bg = inPrev
+                        ? (selectVal.current === 'erase' || touchSelVal.current === 'erase' ? 'var(--pita-bg)' : '#fbbf24')
+                        : inShift ? 'var(--pita-shift-work)' : 'var(--pita-bg)'
+                      return (
+                        <td
+                          key={h}
+                          data-di={di}
+                          data-h={h}
+                          style={{ width:40, height:40, background:bg, cursor:'crosshair', touchAction:'none' }}
+                          onMouseDown={() => onMouseDown(di, h)}
+                          onMouseEnter={() => onMouseEnter(di, h)}
+                          onTouchStart={(e) => onTouchStart(e, di, h)}
+                        />
+                      )
                     })}
                   </tr>
                 )
@@ -167,16 +287,18 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
           </table>
         </div>
       </div>
-      <div style={{ padding:'8px 12px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8, background:'white', flexShrink:0 }}>
-        <button onClick={saveDraft} style={{ flex:1, padding:'8px 0', borderRadius:8, border:'1px solid #e5e7eb', background:'white', color:'#374151', fontSize:12, fontWeight:600, cursor:'pointer' }}>下書き保存</button>
+
+      <div style={{ padding:'10px 12px', borderTop:'1px solid #e5e7eb', display:'flex', gap:8, background:'white', flexShrink:0 }}>
+        <button onClick={saveDraft} style={{ flex:1, padding:'12px 0', borderRadius:10, border:'1px solid #e5e7eb', background:'white', color:'#374151', fontSize:13, fontWeight:600, cursor:'pointer' }}>下書き保存</button>
         {active.status !== 'confirmed' && (
-          <button onClick={submitShift} style={{ flex:1, padding:'8px 0', borderRadius:8, border:'none', background:'#5B67F8', color:'white', fontSize:12, fontWeight:600, cursor:'pointer' }}>提出する</button>
+          <button onClick={submitShift} style={{ flex:2, padding:'12px 0', borderRadius:10, border:'none', background:'#5B67F8', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>提出する</button>
         )}
       </div>
-      <EmployeeTabBar base={base} active="submit" sukima={sukima} />
+      <EmployeeTabBar base={base} sukima={sukima} />
     </>
   )
 
+  // ── List mode ──
   return (
     <>
       <div className="pita-phone-header">
@@ -185,31 +307,43 @@ export default function ShiftSubmit({ base = '/employee', sukima = false }) {
           <div style={{ fontSize:14, fontWeight:700, color:'var(--pita-text)' }}>シフト提出</div>
           <div style={{ fontSize:10, color:'var(--pita-muted)', marginTop:1 }}>{YEAR_MONTH}</div>
         </div>
-        <button onClick={openNew} style={{ fontSize:11, height:28, padding:'0 12px', borderRadius:14, border:'none', background:'#5B67F8', color:'white', fontWeight:600, cursor:'pointer' }}>+ 新規作成</button>
+        <button onClick={openNew} style={{ fontSize:11, height:32, padding:'0 14px', borderRadius:16, border:'none', background:'#5B67F8', color:'white', fontWeight:600, cursor:'pointer' }}>+ 新規作成</button>
       </div>
       <div className="pita-phone-body">
         <div style={{ padding:'8px 0' }}>
           {submissions.length === 0 && (
-            <div style={{ textAlign:'center', padding:'32px 16px', color:'var(--pita-faint)', fontSize:12 }}>提出済みのシフトはありません</div>
+            <div style={{ textAlign:'center', padding:'40px 16px' }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>📋</div>
+              <div style={{ fontSize:14, fontWeight:600, color:'var(--pita-text)', marginBottom:4 }}>まだシフトを提出していません</div>
+              <div style={{ fontSize:12, color:'var(--pita-muted)', marginBottom:20 }}>「+ 新規作成」からシフトを入力してください</div>
+              <button onClick={openNew} style={{ padding:'12px 24px', borderRadius:10, border:'none', background:'#5B67F8', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>シフトを作成する</button>
+            </div>
           )}
           {submissions.map(sub => (
-            <div key={sub.id} style={{ margin:'0 10px 8px', padding:'10px 12px', background:'var(--pita-panel)', border:'1px solid var(--pita-border)', borderRadius:10 }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
-                <span style={{ fontSize:12, fontWeight:700, color:'var(--pita-text)' }}>{sub.period}</span>
-                <span style={badgeStyle(sub.status)}>{STATUS_LABEL[sub.status]}</span>
+            <div key={sub.id} style={{ margin:'0 12px 10px', background:'white', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+              {/* Status accent bar */}
+              <div style={{ height:4, background: sub.status === 'confirmed' ? '#10b981' : sub.status === 'submitted' ? '#5B67F8' : '#f59e0b' }} />
+              <div style={{ padding:'12px 14px' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                  <span style={{ fontSize:13, fontWeight:700, color:'var(--pita-text)' }}>{sub.period}</span>
+                  <span style={badgeStyle(sub.status)}>{STATUS_LABEL[sub.status]}</span>
+                </div>
+                <div style={{ fontSize:10, color:'var(--pita-muted)', marginBottom:12, lineHeight:1.7 }}>
+                  <div>提出日時: {sub.submittedAt || '—'}</div>
+                  <div>最終編集: {sub.lastEditedAt || '—'}</div>
+                </div>
+                <button
+                  onClick={() => openEdit(sub)}
+                  style={{ width:'100%', padding:'10px 0', borderRadius:8, border: sub.status === 'confirmed' ? '1px solid #e5e7eb' : 'none', background: sub.status === 'confirmed' ? '#f9fafb' : '#5B67F8', color: sub.status === 'confirmed' ? '#374151' : 'white', fontSize:13, fontWeight:600, cursor:'pointer' }}
+                >
+                  {sub.status === 'confirmed' ? '確認する' : '編集する'}
+                </button>
               </div>
-              <div style={{ fontSize:10, color:'var(--pita-muted)', marginBottom:8 }}>
-                <div>提出: {sub.submittedAt || '—'}</div>
-                <div>最終編集: {sub.lastEditedAt || '—'}</div>
-              </div>
-              <button onClick={() => openEdit(sub)} style={{ width:'100%', padding:'6px 0', borderRadius:6, border:'1px solid #e5e7eb', background:'#f9fafb', color:'#374151', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                {sub.status === 'confirmed' ? '確認する' : '編集する'}
-              </button>
             </div>
           ))}
         </div>
       </div>
-      <EmployeeTabBar base={base} active="submit" sukima={sukima} />
+      <EmployeeTabBar base={base} sukima={sukima} />
     </>
   )
 }

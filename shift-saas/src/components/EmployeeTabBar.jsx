@@ -1,8 +1,8 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { employeeNotifications } from '../data/mockData'
 
 const UNREAD = employeeNotifications.filter(n => !n.read).length
-const C = '#5B67F8'
+const C    = '#5B67F8'
 const GRAY = '#9CA3AF'
 
 const IconCal = ({ on }) => (
@@ -33,12 +33,22 @@ const IconBell = ({ on }) => (
   </svg>
 )
 
-export default function EmployeeTabBar({ base = '/employee', active, sukima = false }) {
+export default function EmployeeTabBar({ base = '/employee', sukima = false }) {
+  const { pathname } = useLocation()
+
+  const getActive = () => {
+    if (pathname.includes('/submit'))        return 'submit'
+    if (pathname.includes('/sukima'))        return 'sukima'
+    if (pathname.includes('/notifications')) return 'notifications'
+    return 'schedule'
+  }
+  const active = getActive()
+
   const tabs = [
-    { id:'schedule',      to: base,                    label:'スケジュール', Icon: IconCal,  end: true  },
-    { id:'submit',        to: `${base}/submit`,        label:'シフト提出',   Icon: IconFile, end: false },
-    ...(sukima ? [{ id:'sukima', to:`${base}/sukima`, label:'スキマ', Icon: IconBolt, end: false }] : []),
-    { id:'notifications', to: `${base}/notifications`, label:'通知',         Icon: IconBell, end: false },
+    { id:'schedule',      to: base,                    label:'スケジュール', Icon: IconCal  },
+    { id:'submit',        to: `${base}/submit`,        label:'シフト提出',   Icon: IconFile },
+    ...(sukima ? [{ id:'sukima', to:`${base}/sukima`, label:'スキマ', Icon: IconBolt }] : []),
+    { id:'notifications', to: `${base}/notifications`, label:'通知',         Icon: IconBell },
   ]
 
   return (
@@ -47,7 +57,15 @@ export default function EmployeeTabBar({ base = '/employee', active, sukima = fa
         const on = active === id
         const hasUnread = id === 'notifications' && UNREAD > 0
         return (
-          <Link key={id} to={to} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2, padding:'8px 4px 4px', textDecoration:'none', position:'relative', borderTop: on ? `2px solid ${C}` : '2px solid transparent' }}>
+          <Link
+            key={id}
+            to={to}
+            style={{
+              flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+              gap:2, padding:'8px 4px 4px', textDecoration:'none', position:'relative',
+              borderTop: on ? `2px solid ${C}` : '2px solid transparent',
+            }}
+          >
             <div style={{ position:'relative' }}>
               <Icon on={on} />
               {hasUnread && <span style={{ position:'absolute', top:-1, right:-2, width:7, height:7, background:'#EF4444', borderRadius:'50%', border:'1.5px solid white' }} />}

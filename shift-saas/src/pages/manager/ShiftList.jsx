@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { shiftVersions as initialVersions, YEAR_MONTH } from '../../data/mockData'
+import { api } from '../../api/index.js'
 
 const STATUS_LABEL = { draft: '下書き', confirmed: '確定済み' }
 const STATUS_STYLE = {
@@ -16,14 +17,21 @@ function nowStamp() {
 
 export default function ShiftList() {
   const navigate = useNavigate()
-  const [versions, setVersions]       = useState(initialVersions)
-  const [openMenuId, setOpenMenuId]   = useState(null)
-  const [renamingId, setRenamingId]   = useState(null)
-  const [renameValue, setRenameValue] = useState('')
+  const [versions, setVersions]         = useState(initialVersions)
+  const [openMenuId, setOpenMenuId]     = useState(null)
+  const [renamingId, setRenamingId]     = useState(null)
+  const [renameValue, setRenameValue]   = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const menuRef = useRef(null)
 
-  // close action menu on outside click
+  // Load versions from DB on mount
+  useEffect(() => {
+    api.getVersions()
+      .then(data => setVersions(data))
+      .catch(() => {}) // keep initialVersions on API error
+  }, [])
+
+  // Close action menu on outside click
   useEffect(() => {
     const onClick = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenuId(null)
@@ -41,34 +49,40 @@ export default function ShiftList() {
     return `ver${next}`
   }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const id = `v${Date.now()}`
     const ts = nowStamp()
     const v  = { id, name: nextVerName(), status: 'draft', createdAt: ts, updatedAt: ts, author: '金子 光男' }
     setVersions(prev => [v, ...prev])
     setOpenMenuId(null)
+    api.createVersion(v).catch(() => {})
   }
 
-  const handleConfirm = (id) => {
-    setVersions(prev => prev.map(v => v.id === id ? { ...v, status: 'confirmed', updatedAt: nowStamp() } : v))
+  const handleConfirm = async (id) => {
+    const ts = nowStamp()
+    setVersions(prev => prev.map(v => v.id === id ? { ...v, status: 'confirmed', updatedAt: ts } : v))
     setOpenMenuId(null)
+    api.updateVersion(id, { status: 'confirmed', updatedAt: ts }).catch(() => {})
   }
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     setVersions(prev => prev.filter(v => v.id !== id))
     setDeleteTarget(null)
     setOpenMenuId(null)
+    api.deleteVersion(id).catch(() => {})
   }
 
   const startRename = (v) => {
     setRenamingId(v.id)
     setRenameValue(v.name)
   }
-  const commitRename = () => {
+  const commitRename = async () => {
     if (!renamingId) return
     const trimmed = renameValue.trim()
     if (trimmed) {
-      setVersions(prev => prev.map(v => v.id === renamingId ? { ...v, name: trimmed, updatedAt: nowStamp() } : v))
+      const ts = nowStamp()
+      setVersions(prev => prev.map(v => v.id === renamingId ? { ...v, name: trimmed, updatedAt: ts } : v))
+      api.updateVersion(renamingId, { name: trimmed, updatedAt: ts }).catch(() => {})
     }
     setRenamingId(null)
     setRenameValue('')

@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { staff as initialStaff, shiftData, daysConfig, skillLabels, YEAR_MONTH, staffConstraints as initialConstraints } from '../../data/mockData'
+import { api } from '../../api/index.js'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function parseShiftTimes(code) {
@@ -94,6 +95,13 @@ const MODAL_TABS = ['基本情報', '連絡先・住所', '固定シフト', '�
 export default function Members() {
   const [members,         setMembers]         = useState(initialStaff)
   const [constraints,     setConstraints]     = useState(initialConstraints)
+
+  // Load staff from DB on mount
+  useEffect(() => {
+    api.getStaff()
+      .then(data => { if (data?.length) setMembers(data) })
+      .catch(() => {})
+  }, [])
   const [showModal,       setShowModal]       = useState(false)
   const [activeTab,       setActiveTab]       = useState(0)
   const [form,            setForm]            = useState(BLANK_MEMBER)
@@ -287,15 +295,20 @@ export default function Members() {
     setShowModal(true)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const composedName = (form.lastName || form.firstName)
       ? `${form.lastName || ''}${form.lastName && form.firstName ? ' ' : ''}${form.firstName || ''}`.trim()
       : form.name
     if (!composedName.trim()) return
     const id = form.id || (members.length + 100)
     const saved = { ...form, id, name: composedName }
-    if (form.id) setMembers(prev => prev.map(m => m.id === form.id ? saved : m))
-    else         setMembers(prev => [...prev, saved])
+    if (form.id) {
+      setMembers(prev => prev.map(m => m.id === form.id ? saved : m))
+      api.updateStaff(form.id, saved).catch(() => {})
+    } else {
+      const created = await api.createStaff(saved).catch(() => null)
+      setMembers(prev => [...prev, created || saved])
+    }
     setConstraints(prev => ({ ...prev, [id]: constraintForm }))
     setShowModal(false)
   }
@@ -968,6 +981,7 @@ export default function Members() {
                     onClick={() => {
                       if (confirm(`${form.lastName || form.name || 'このスタッフ'} を退職させますか？`)) {
                         setMembers(prev => prev.filter(m => m.id !== form.id))
+                        api.deleteStaff(form.id).catch(() => {})
                         setShowModal(false)
                       }
                     }}
