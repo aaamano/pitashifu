@@ -148,11 +148,14 @@ export const skillLabels = {
 
 // ─── New additions ──────────────────────────────────────────────────────────
 
+export const DEFAULT_STORE_ADDRESS = '〒160-0022 東京都新宿区新宿3-31-7'
+
 export const storeConfig = {
   openHour: 9,
   closeHour: 23,
   slotInterval: 15, // minutes
   avgProductivity: 8, // orders processed per staff per hour
+  address: DEFAULT_STORE_ADDRESS,
   specialTasks: [
     { id: 1, name: '搬入',  startTime: '9:00',  endTime: '9:45',  requiredStaff: 2, colorKey: 'orange', enabled: true },
     { id: 2, name: '掃除',  startTime: '22:00', endTime: '22:45', requiredStaff: 2, colorKey: 'purple', enabled: true },

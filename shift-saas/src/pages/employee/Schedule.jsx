@@ -72,12 +72,12 @@ export default function Schedule({ base = '/pitashif/employee', sukima = false }
           今日は{TODAY_DAY}日です
         </div>
 
-        <div style={{ overflowX:'auto' }}>
+        <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
           <table className="pita-shift-grid" style={{ userSelect:'none' }}>
             <thead>
               <tr>
-                <th className="pita-time-col">日</th>
-                {HOURS.map(h => <th key={h}>{h}</th>)}
+                <th className="pita-time-col" style={{ width:38, fontSize:9 }}>日</th>
+                {HOURS.map(h => <th key={h} style={{ minWidth:20, fontSize:9 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -93,6 +93,7 @@ export default function Schedule({ base = '/pitashif/employee', sukima = false }
                         fontWeight: isToday ? 700 : 400,
                         fontSize:   9,
                         background: isToday ? '#dbeafe' : undefined,
+                        width: 38, lineHeight:1.2, padding:'2px 3px',
                       }}
                     >
                       {d.day}/{d.dow}
@@ -106,6 +107,7 @@ export default function Schedule({ base = '/pitashif/employee', sukima = false }
                           style={{
                             background: inShift ? cfg.cellBg : isToday ? '#eff6ff' : 'var(--pita-bg)',
                             cursor: 'default',
+                            minWidth: 20,
                           }}
                         />
                       )

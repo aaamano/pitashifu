@@ -582,10 +582,15 @@ body {
   flex-direction: column;
   box-shadow: 0 0 60px rgba(79,70,229,0.20);
 }
-/* SP: full width, no desktop chrome */
-@media (max-width: 480px) {
-  .emp-stage { background: #f9fafb; }
-  .emp-frame { max-width: 100%; box-shadow: none; min-height: 100svh; }
+/* SP: full width, no desktop chrome, tab bar always locked at bottom */
+@media (max-width: 768px) {
+  .emp-stage { background: var(--pita-bg); align-items: stretch; }
+  .emp-frame {
+    max-width: 100%;
+    box-shadow: none;
+    height: 100svh;      /* exact viewport — prevents overflow / tab-bar scroll-away */
+    overflow: hidden;
+  }
 }
 
 /* ── Mobile: phone-stage shows only inner content ── */
@@ -616,5 +621,101 @@ body {
   }
   .pita-phone-stage > div:first-child > div:last-child {
     display: none; /* hide URL label below phone */
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   Manager — Mobile Responsive (≤768px)
+   ══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* Page padding */
+  .mgr-page {
+    padding: 14px 12px !important;
+  }
+
+  /* Card header */
+  .mgr-card-head {
+    padding: 10px 12px !important;
+    font-size: 13px !important;
+  }
+
+  /* All table/chart containers inside cards: horizontal scroll */
+  .mgr-card > div,
+  .mgr-card > table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Page top bar: stack title + buttons vertically */
+  .mgr-page > div:first-child {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  /* Button rows inside top bar: wrap */
+  .mgr-page > div:first-child > div {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Primary/secondary buttons: slightly smaller */
+  .mgr-btn-primary,
+  .mgr-btn-secondary {
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+  }
+
+  /* Card overflow utility */
+  .mgr-scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Notification badge in mobile top bar */
+  .mgr-notif-badge {
+    display: inline-flex !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   Employee — SP Improvements
+   ══════════════════════════════════════════════════════ */
+
+/* Larger touch targets for all pita-btn on SP */
+@media (max-width: 480px) {
+  .pita-btn {
+    height: 36px !important;
+    padding: 0 14px !important;
+    font-size: 12px !important;
+  }
+
+  /* Summary row: wrap on narrow screens */
+  .pita-summary-row {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+
+  /* Schedule / submit grid: taller rows for readability */
+  .pita-shift-grid td,
+  .pita-shift-grid th {
+    height: 28px;
+  }
+  .pita-shift-grid thead th {
+    height: 24px;
+    font-size: 9px;
+  }
+
+  /* Mode bar text visible */
+  .pita-mode-bar {
+    font-size: 12px;
+    padding: 8px 14px;
+  }
+
+  /* Notifications: larger icon circles */
+  .pita-phone-header {
+    padding: 12px 14px;
+    min-height: 52px;
   }
 }

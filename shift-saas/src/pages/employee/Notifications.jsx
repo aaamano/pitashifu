@@ -48,10 +48,11 @@ export default function EmployeeNotifications({ base = '/pitashif/employee', suk
                 onClick={() => markRead(n.id)}
                 style={{
                   display:'flex', alignItems:'flex-start', gap:10,
-                  padding:'11px 14px',
+                  padding:'13px 14px',
                   borderBottom:'1px solid var(--pita-border)',
                   background: !n.read ? '#eef2ff' : 'var(--pita-bg)',
-                  cursor:'pointer',
+                  cursor:'pointer', minHeight:56,
+                  WebkitTapHighlightColor:'rgba(91,103,248,0.08)',
                 }}
               >
                 <div style={{

@@ -1,5 +1,13 @@
 import { useState } from 'react'
-import { storeConfig as initialConfig, YEAR_MONTH, skillLabels as initialSkillLabels } from '../../data/mockData'
+import { storeConfig as initialConfig, YEAR_MONTH, skillLabels as initialSkillLabels, DEFAULT_STORE_ADDRESS } from '../../data/mockData'
+
+const ADDR_KEY = 'pitashif_store_address'
+const loadAddress = () => {
+  try { return localStorage.getItem(ADDR_KEY) || DEFAULT_STORE_ADDRESS } catch { return DEFAULT_STORE_ADDRESS }
+}
+const saveAddress = (addr) => {
+  try { localStorage.setItem(ADDR_KEY, addr) } catch {}
+}
 
 // Hardcoded color lookup (avoids Tailwind purge issues with dynamic strings)
 const TASK_COLORS = {
@@ -23,6 +31,7 @@ export { TASK_COLORS }
 
 export default function StoreSettings() {
   const [config,    setConfig]    = useState(initialConfig)
+  const [address,   setAddress]   = useState(loadAddress)
   const [saved,     setSaved]     = useState(false)
   const [editTask,  setEditTask]  = useState(null)
   const [taskForm,  setTaskForm]  = useState(null)
@@ -39,7 +48,7 @@ export default function StoreSettings() {
   const removeSkill = (idx) => setSkills(prev => prev.filter((_, i) => i !== idx))
   const updateSkill = (idx, field, val) => setSkills(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s))
 
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  const handleSave = () => { saveAddress(address); setSaved(true); setTimeout(() => setSaved(false), 2000) }
 
   const openEdit = (task) => {
     const [sh, sm] = task.startTime.split(':').map(Number)
@@ -84,6 +93,30 @@ export default function StoreSettings() {
       {/* Basic settings */}
       <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>
         <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', marginBottom:16, marginTop:0 }}>基本設定</h2>
+
+        {/* Address */}
+        <div style={{ marginBottom:20 }}>
+          <label className="mgr-label">店舗住所</label>
+          <div style={{ display:'flex', gap:8 }}>
+            <input
+              type="text"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              placeholder="〒000-0000 都道府県市区町村..."
+              className="mgr-input"
+            />
+            <a
+              href={`https://maps.google.com/?q=${encodeURIComponent(address)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'0 14px', borderRadius:8, border:'1px solid #E2E8F0', background:'white', color:'#475569', fontSize:12, fontWeight:600, textDecoration:'none', whiteSpace:'nowrap', flexShrink:0 }}
+            >
+              🗺 地図を確認
+            </a>
+          </div>
+          <div style={{ fontSize:11, color:'#94A3B8', marginTop:4 }}>スキマバイトのマップ表示に使用されます</div>
+        </div>
+
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
           <div>
             <label className="mgr-label">営業開始時間</label>
