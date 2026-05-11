@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { employeeNotifications } from '../data/mockData'
 
 const UNREAD = employeeNotifications.filter(n => !n.read).length
-const C    = '#5B67F8'
+const C    = '#4F46E5'
 const GRAY = '#9CA3AF'
 
 const IconCal = ({ on }) => (
@@ -32,6 +32,12 @@ const IconBell = ({ on }) => (
     <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
   </svg>
 )
+const IconPerson = ({ on }) => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={on ? C : GRAY} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="4"/>
+    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+  </svg>
+)
 
 export default function EmployeeTabBar({ base = '/pitashif/employee', sukima = false }) {
   const { pathname } = useLocation()
@@ -40,15 +46,17 @@ export default function EmployeeTabBar({ base = '/pitashif/employee', sukima = f
     if (pathname.includes('/submit'))        return 'submit'
     if (pathname.includes('/sukima'))        return 'sukima'
     if (pathname.includes('/notifications')) return 'notifications'
+    if (pathname.includes('/settings'))      return 'settings'
     return 'schedule'
   }
   const active = getActive()
 
   const tabs = [
-    { id:'schedule',      to: base,                    label:'スケジュール', Icon: IconCal  },
-    { id:'submit',        to: `${base}/submit`,        label:'シフト提出',   Icon: IconFile },
+    { id:'schedule',      to: base,                     label:'スケジュール', Icon: IconCal    },
+    { id:'submit',        to: `${base}/submit`,          label:'シフト提出',   Icon: IconFile   },
     ...(sukima ? [{ id:'sukima', to:`${base}/sukima`, label:'スキマ', Icon: IconBolt }] : []),
-    { id:'notifications', to: `${base}/notifications`, label:'通知',         Icon: IconBell },
+    { id:'notifications', to: `${base}/notifications`,  label:'通知',         Icon: IconBell   },
+    { id:'settings',      to: `${base}/settings`,       label:'設定',         Icon: IconPerson },
   ]
 
   return (

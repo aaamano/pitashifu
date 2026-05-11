@@ -17,6 +17,7 @@ import ShiftSubmit from './pages/employee/ShiftSubmit'
 import EmployeeNotifications from './pages/employee/Notifications'
 import SukimaTop from './pages/employee/SukimaTop'
 import SukimaDetail from './pages/employee/SukimaDetail'
+import Profile from './pages/employee/Profile'
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
           <Route index element={<Schedule />} />
           <Route path="submit" element={<ShiftSubmit />} />
           <Route path="notifications" element={<EmployeeNotifications />} />
+          <Route path="settings" element={<Profile />} />
         </Route>
 
         <Route path="/pitashif/employee-ver2" element={<EmployeeLayout />}>
@@ -48,6 +50,7 @@ export default function App() {
           <Route path="notifications" element={<EmployeeNotifications base="/pitashif/employee-ver2" sukima={true} />} />
           <Route path="sukima" element={<SukimaTop />} />
           <Route path="sukima/:id" element={<SukimaDetail />} />
+          <Route path="settings" element={<Profile base="/pitashif/employee-ver2" sukima={true} />} />
         </Route>
 
         {/* Backward-compat: redirect old top-level paths to /pitashif/ */}
