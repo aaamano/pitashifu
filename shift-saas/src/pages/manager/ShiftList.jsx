@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useOrg } from '../../context/OrgContext'
 import * as versionsApi from '../../api/versions'
 import { listAllSubmissions, findOrCreatePeriod } from '../../api/shiftRequests'
 import * as employeesApi from '../../api/employees'
-import * as shiftsApi from '../../api/shifts'
 
 const PER_PAGE = 12
 
@@ -53,6 +52,7 @@ function buildFuturePeriods() {
 
 export default function ShiftList() {
   const { orgId } = useParams()
+  const navigate = useNavigate()
   const { stores } = useOrg()
   const storeId = stores[0]?.id
 
@@ -131,20 +131,28 @@ export default function ShiftList() {
     if (!storeId) return
     setCreating(true); setErrMsg('')
     try {
-      // 期間をDBに作成（or既存取得）
       const period = await findOrCreatePeriod({ storeId, periodName })
-      // 新規バージョン
       const nextName = computeNextVersionName(versions, periodName)
       const v = await versionsApi.createVersion({ storeId, name: nextName, periodId: period.id })
-      // versions stateに追加
       setVersions(prev => [v, ...prev])
-      // 新規タブで開く
       window.open(`/${orgId}/manager/shift/${v.id}`, '_blank')
     } catch (e) {
       console.error('[ShiftList.createDraft]', e)
       setErrMsg(e.message || '新規作成に失敗しました')
     } finally {
       setCreating(false)
+    }
+  }
+
+  // 「シフト希望一覧」ボタン: 該当periodをDBに find-or-create して新URLへ遷移
+  const handleOpenRequests = async (periodName) => {
+    if (!storeId) return
+    try {
+      const period = await findOrCreatePeriod({ storeId, periodName })
+      navigate(`/${orgId}/manager/period-requests/${period.id}`)
+    } catch (e) {
+      console.error('[ShiftList.openRequests]', e)
+      setErrMsg(e.message || '希望一覧を開けませんでした')
     }
   }
 
@@ -188,8 +196,8 @@ export default function ShiftList() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button onClick={() => handleCardClick(cardId, 'requests')}
-                  style={tabBtnStyle(isOpen && openMode === 'requests')}>シフト希望一覧</button>
+                <button onClick={() => handleOpenRequests(period.name)}
+                  style={tabBtnStyle(false)}>シフト希望一覧</button>
                 <button onClick={() => handleCardClick(cardId, 'decide')}
                   style={tabBtnStyle(isOpen && openMode === 'decide')}>シフト確定作業</button>
                 <button onClick={() => handleCardClick(cardId, 'confirmed')}
@@ -197,9 +205,6 @@ export default function ShiftList() {
               </div>
             </div>
 
-            {isOpen && openMode === 'requests' && (
-              <RequestsView requests={requestsByEmp} />
-            )}
             {isOpen && openMode === 'decide' && (
               <DecideView
                 periodName={period.name}

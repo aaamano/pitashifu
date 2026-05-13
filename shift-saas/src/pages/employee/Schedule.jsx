@@ -142,6 +142,26 @@ export default function Schedule({ base: baseProp, sukima = false }) {
     return () => { cancelled = true }
   }, [me, storeId, year, month, daysConfig])
 
+  // 選択日の最終編集者情報を shift_requests から取得
+  const [editorInfo, setEditorInfo] = useState(null)
+  useEffect(() => {
+    if (!me) { setEditorInfo(null); return }
+    let cancelled = false
+    const dateStr = `${year}-${pad(month)}-${pad(selectedDay)}`
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('shift_requests')
+          .select('last_edited_at, editor:employees!shift_requests_last_edited_by_fkey(name)')
+          .eq('employee_id', me.id)
+          .eq('date', dateStr)
+          .maybeSingle()
+        if (!cancelled) setEditorInfo(data ?? null)
+      } catch (e) { console.error('[Schedule.editorInfo]', e) }
+    })()
+    return () => { cancelled = true }
+  }, [me, year, month, selectedDay])
+
   // DBから取れていない時のフォールバック（未ログインや読み込み中）
   const meDisp = me ?? (meLoading ? null : mockStaff[0])
   const myShiftsDisp = myShifts.length === daysConfig.length ? myShifts : daysConfig.map(() => 'X')
@@ -270,6 +290,11 @@ export default function Schedule({ base: baseProp, sukima = false }) {
               </div>
             ) : (
               <div style={{ fontSize: 12, color: '#94A3B8', textAlign: 'center', padding: '12px 0' }}>この日は出勤予定がありません</div>
+            )}
+            {editorInfo?.last_edited_at && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${BORDER}`, fontSize: 10, color: '#94A3B8' }}>
+                最終編集: {editorInfo.editor?.name ?? '—'} ／ {new Date(editorInfo.last_edited_at).toLocaleString('ja-JP')}
+              </div>
             )}
           </div>
         </div>

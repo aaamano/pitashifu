@@ -13,6 +13,7 @@ import Dashboard from './pages/manager/Dashboard'
 import Targets from './pages/manager/Targets'
 import ShiftList from './pages/manager/ShiftList'
 import ShiftDecision from './pages/manager/ShiftDecision'
+import PeriodRequests from './pages/manager/PeriodRequests'
 import Members from './pages/manager/Members'
 import MemberDetail from './pages/manager/MemberDetail'
 import StoreSettings from './pages/manager/StoreSettings'
@@ -68,6 +69,7 @@ export default function App() {
             <Route path="targets"       element={<Targets />} />
             <Route path="shift"         element={<ShiftList />} />
             <Route path="shift/:versionId" element={<ShiftDecision />} />
+            <Route path="period-requests/:periodId" element={<PeriodRequests />} />
             <Route path="members"       element={<Members />} />
             <Route path="members/:id"   element={<MemberDetail />} />
             <Route path="settings"      element={<StoreSettings />} />
