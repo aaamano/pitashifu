@@ -12,35 +12,56 @@ const FALLBACK_ORG_ID = 'demo'
 const PENDING_BOOTSTRAP_KEY = 'pitashif_pending_bootstrap'
 
 // ログイン後にユーザーの org_id + role を引いて遷移先パスを決める
-// employees 行が無い場合: localStorageの pendingBootstrap を見て自動 bootstrap
+// employees 行が無い場合: pendingBootstrap or メールから会社名を推定して bootstrap を実行
 async function resolveRedirectPath() {
+  // 1. employees 行を確認
   let { data } = await supabase
     .from('employees')
     .select('org_id, role')
     .maybeSingle()
-  if (!data) {
-    // 未bootstrap → 保留中の signup 引数があればここで実行
-    try {
-      const raw = localStorage.getItem(PENDING_BOOTSTRAP_KEY)
-      if (raw) {
-        const { companyName, userName } = JSON.parse(raw)
-        const { data: orgId, error: bsErr } = await supabase.rpc('bootstrap_owner_account', {
-          p_company_name: companyName,
-          p_user_name:    userName || null,
-        })
-        if (!bsErr && orgId) {
-          localStorage.removeItem(PENDING_BOOTSTRAP_KEY)
-          return `/${orgId}/manager`
-        }
-        console.error('[login.bootstrap]', bsErr)
-      }
-    } catch (e) {
-      console.error('[login.pendingBootstrap]', e)
-    }
-    return `/${FALLBACK_ORG_ID}/manager`
+  if (data) {
+    const scope = data.role === 'staff' ? 'employee' : 'manager'
+    return `/${data.org_id}/${scope}`
   }
-  const scope = data.role === 'staff' ? 'employee' : 'manager'
-  return `/${data.org_id}/${scope}`
+
+  // 2. 未bootstrap → pendingBootstrap or メールアドレスから会社名を生成して bootstrap
+  let companyName = '新規会社'
+  let userName    = null
+  try {
+    const raw = localStorage.getItem(PENDING_BOOTSTRAP_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      if (p.companyName) companyName = p.companyName
+      if (p.userName)    userName    = p.userName
+    } else {
+      // メールアドレスのローカル部分を会社名のフォールバックに
+      const { data: sess } = await supabase.auth.getSession()
+      const email = sess?.session?.user?.email
+      if (email) {
+        const local = email.split('@')[0]
+        companyName = `${local} の会社`
+      }
+    }
+  } catch (e) {
+    console.error('[login.resolveRedirect.pending]', e)
+  }
+
+  try {
+    const { data: orgId, error: bsErr } = await supabase.rpc('bootstrap_owner_account', {
+      p_company_name: companyName,
+      p_user_name:    userName,
+    })
+    if (!bsErr && orgId) {
+      localStorage.removeItem(PENDING_BOOTSTRAP_KEY)
+      return `/${orgId}/manager`
+    }
+    console.error('[login.bootstrap]', bsErr)
+  } catch (e) {
+    console.error('[login.bootstrap.exception]', e)
+  }
+
+  // 3. 最終フォールバック
+  return `/${FALLBACK_ORG_ID}/manager`
 }
 
 export default function Login() {
