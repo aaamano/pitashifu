@@ -192,7 +192,10 @@ export default function Import() {
             r.errors.push(`期間 ${pName} の作成に失敗: ${e.message || e}`)
           }
         }
-        const reqRows = []
+        // Excelに同名スタッフが複数行ある場合、name→id で同じ employee_id に集約されるため、
+        // (period_id, employee_id, date) で重複排除する（出勤行を休み行より優先）
+        const reqMap = new Map()
+        const dupNames = new Set()
         const nowIso = new Date().toISOString()
         for (const sh of parsed.shifts) {
           const empId = nameToId.get(sh.name)
@@ -204,7 +207,7 @@ export default function Import() {
             const period = periodByHalf.get(half)
             if (!period) return
             const t = parseShiftTimes(code)
-            reqRows.push({
+            const row = {
               period_id:       period.id,
               employee_id:     empId,
               date:            `${year}-${pad(month)}-${pad(day)}`,
@@ -215,9 +218,22 @@ export default function Import() {
               submitted_at:    nowIso,
               last_edited_by:  me?.id ?? null,
               last_edited_at:  nowIso,
-            })
+            }
+            const key = `${row.period_id}|${row.employee_id}|${row.date}`
+            const existing = reqMap.get(key)
+            if (!existing) {
+              reqMap.set(key, row)
+            } else {
+              dupNames.add(sh.name)
+              // 出勤行を優先（休みより）
+              if (row.is_available && !existing.is_available) reqMap.set(key, row)
+            }
           })
         }
+        if (dupNames.size > 0) {
+          r.errors.push(`同名スタッフが重複しています: ${[...dupNames].join(', ')}（最新の行で上書き）`)
+        }
+        const reqRows = [...reqMap.values()]
         for (let i = 0; i < reqRows.length; i += 200) {
           const chunk = reqRows.slice(i, i + 200)
           const { error: reqErr } = await supabase
