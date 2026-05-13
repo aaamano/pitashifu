@@ -1,5 +1,8 @@
-import { Link } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { LogoIcon } from '../components/Logo'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 const KEYWORDS = [
   { label:'整然',     icon:'❖' },
@@ -9,6 +12,32 @@ const KEYWORDS = [
 ]
 
 export default function TopPage() {
+  const { user, loading } = useAuth()
+  const navigate = useNavigate()
+
+  // 既にログイン済みなら、自分の組織画面に自動遷移
+  useEffect(() => {
+    if (loading || !user) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('org_id, role')
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
+        if (cancelled) return
+        if (emp) {
+          const scope = emp.role === 'staff' ? 'employee' : 'manager'
+          navigate(`/${emp.org_id}/${scope}`, { replace: true })
+        }
+      } catch (e) {
+        console.error('[TopPage.autoRedirect]', e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user, loading, navigate])
+
   return (
     <div style={{
       minHeight:'100vh',
