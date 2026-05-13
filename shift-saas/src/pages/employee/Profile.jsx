@@ -160,7 +160,7 @@ export default function Profile({ base: baseProp, sukima = false }) {
           <div style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', marginBottom: 2 }}>{profile.name}</div>
           <div style={{ fontSize: 12, color: '#64748B', fontWeight: 500, marginBottom: 8 }}>{profile.role}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {ME.skills.map(s => (
+            {(me?.skills ?? []).map(s => (
               <span key={s} style={{ fontSize: 10, background: '#EEF0FE', color: INDIGO, padding: '3px 9px', borderRadius: 20, fontWeight: 600 }}>
                 {skillLabels[s] || s}
               </span>
@@ -181,15 +181,15 @@ export default function Profile({ base: baseProp, sukima = false }) {
 
             <div style={{ background: 'white', marginTop: 10, borderTop: `1px solid ${BORDER}` }}>
               <div style={{ padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.04em' }}>給与・緊急連絡先</div>
-              <InfoRow label="時給"       value={`¥${ME.wage.toLocaleString()}/時間`} accent />
+              <InfoRow label="時給"       value={`¥${(me?.wage ?? 0).toLocaleString()}/時間`} accent />
               <InfoRow label="振込口座"   value={profile.bank} />
               <InfoRow label="緊急連絡先" value={profile.emergency} />
             </div>
 
             <div style={{ background: 'white', marginTop: 10, borderTop: `1px solid ${BORDER}` }}>
               <div style={{ padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.04em' }}>雇用情報</div>
-              <InfoRow label="雇用形態"   value={ME.type === 'F' ? '正社員' : 'パートタイム'} />
-              <InfoRow label="交通費"     value={ME.transitPerDay > 0 ? `¥${ME.transitPerDay.toLocaleString()}/日` : 'なし'} />
+              <InfoRow label="雇用形態"   value={me?.type === 'F' ? '正社員' : 'パートタイム'} />
+              <InfoRow label="交通費"     value={(me?.transitPerDay ?? 0) > 0 ? `¥${me.transitPerDay.toLocaleString()}/日` : 'なし'} />
             </div>
           </>
         ) : (
