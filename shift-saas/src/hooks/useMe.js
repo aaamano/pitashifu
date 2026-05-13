@@ -1,0 +1,27 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+
+// 現在ログイン中ユーザーの employees 行を返す
+// 未認証 / 未登録の場合は null
+export function useMe() {
+  const [me, setMe] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    supabase
+      .from('employees')
+      .select('*')
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) console.error('[useMe]', error)
+        setMe(data ?? null)
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  return { me, loading }
+}

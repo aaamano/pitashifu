@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { staff, daysConfig, YEAR_MONTH, shiftSubmissions as initialSubmissions } from '../../data/mockData'
+import { staff as mockStaff, daysConfig, YEAR_MONTH, shiftSubmissions as initialSubmissions } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { useOrg } from '../../context/OrgContext'
+import { useMe } from '../../hooks/useMe'
 import { listSubmissions, saveSubmission } from '../../api/shiftRequests'
-
-const ME = staff[0]
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8)
 
 function parseCode(code) {
@@ -52,6 +51,8 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
   const base = baseProp ?? `/${orgId}/employee`
   const { stores } = useOrg()
   const storeId = stores[0]?.id
+  const { me } = useMe()
+  const meDisp = me ?? mockStaff[0]
   const [submissions, setSubmissions] = useState(initialSubmissions)
   const [mode, setMode]               = useState('list')
   const [errMsg, setErrMsg]           = useState('')
@@ -299,7 +300,7 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
   return (
     <>
       <div className="pita-phone-header">
-        <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{ME.name[0]}</div>
+        <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{meDisp.name[0]}</div>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:14, fontWeight:700, color:'var(--pita-text)' }}>シフト管理</div>
           <div style={{ fontSize:10, color:'var(--pita-muted)', marginTop:1 }}>{YEAR_MONTH}</div>

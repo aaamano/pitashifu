@@ -93,6 +93,47 @@ export async function findOrCreatePeriod({ storeId, periodName }) {
   return data
 }
 
+// マネージャー向け: ストア内の全社員のシフト希望提出を期間ごとにまとめて取得
+// 戻り値: [{ period: { id, name, period_start, period_end }, requests: [{ employeeId, employeeName, date, preferredStart, preferredEnd, isAvailable, status }] }, ...]
+export async function listAllSubmissions({ storeId }) {
+  if (!storeId) return []
+  const { data: periods, error: pErr } = await supabase
+    .from('shift_periods')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('period_start', { ascending: false })
+  if (pErr) { console.error('[shiftRequests.listAll.periods]', pErr); throw pErr }
+  if (!periods?.length) return []
+
+  const periodIds = periods.map(p => p.id)
+  const { data: reqs, error: rErr } = await supabase
+    .from('shift_requests')
+    .select('*, employee:employees!shift_requests_employee_id_fkey(id, name)')
+    .in('period_id', periodIds)
+    .order('date', { ascending: true })
+  if (rErr) { console.error('[shiftRequests.listAll.reqs]', rErr); throw rErr }
+
+  // periodごとにグルーピング
+  const byPeriod = {}
+  for (const r of reqs ?? []) {
+    (byPeriod[r.period_id] ||= []).push({
+      employeeId:     r.employee_id,
+      employeeName:   r.employee?.name ?? '—',
+      date:           r.date,
+      preferredStart: r.preferred_start,
+      preferredEnd:   r.preferred_end,
+      isAvailable:    r.is_available,
+      status:         r.status,
+      note:           r.note,
+      submittedAt:    r.submitted_at,
+    })
+  }
+  return periods.map(p => ({
+    period: { id: p.id, name: p.name, periodStart: p.period_start, periodEnd: p.period_end, status: p.status },
+    requests: byPeriod[p.id] ?? [],
+  }))
+}
+
 export async function listSubmissions({ storeId }) {
   if (!storeId) return []
   const myId = await getMyEmployeeId()
