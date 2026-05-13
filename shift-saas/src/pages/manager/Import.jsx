@@ -121,7 +121,8 @@ export default function Import() {
         const dbEmps = await employeesApi.listEmployees(orgId)
         const nameToId = new Map(dbEmps.map(e => [e.name, e.id]))
         // 3-2. 新しいshift_version作成
-        const { data: me } = await supabase.from('employees').select('id').maybeSingle()
+        const { data: { user } } = await supabase.auth.getUser()
+        const { data: me } = await supabase.from('employees').select('id').eq('auth_user_id', user?.id ?? '').maybeSingle()
         const { data: ver, error: vErr } = await supabase
           .from('shift_versions')
           .insert({

@@ -51,9 +51,12 @@ function hhmm(h) {
 }
 
 async function getMyEmployeeId() {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user?.id) return null
   const { data } = await supabase
     .from('employees')
     .select('id')
+    .eq('auth_user_id', user.id)
     .maybeSingle()
   return data?.id ?? null
 }

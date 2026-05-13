@@ -10,16 +10,23 @@ export function useMe() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    supabase
-      .from('employees')
-      .select('*')
-      .maybeSingle()
-      .then(({ data, error }) => {
+    ;(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (cancelled) return
+        if (!user) { setMe(null); return }
+        const { data, error } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
         if (cancelled) return
         if (error) console.error('[useMe]', error)
         setMe(data ?? null)
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
     return () => { cancelled = true }
   }, [])
 

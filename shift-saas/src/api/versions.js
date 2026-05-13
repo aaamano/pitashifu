@@ -40,9 +40,11 @@ export async function listVersions(storeId) {
 
 export async function createVersion({ storeId, name }) {
   // author_id = 現在のログインユーザーの employees.id
+  const { data: { user } } = await supabase.auth.getUser()
   const { data: me } = await supabase
     .from('employees')
     .select('id')
+    .eq('auth_user_id', user?.id ?? '')
     .maybeSingle()
   const { data, error } = await supabase
     .from('shift_versions')

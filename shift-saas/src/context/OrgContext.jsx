@@ -43,9 +43,13 @@ export function OrgProvider({ children }) {
         return
       }
       if (!orgRow) {
-        // 行が無いか、RLSで読めなかった
+        // 行が無いか、RLSで読めなかった → 自分の所属を確認
+        const { data: { user } } = await supabase.auth.getUser()
         const { data: empMine } = await supabase
-          .from('employees').select('id, org_id').maybeSingle()
+          .from('employees')
+          .select('id, org_id, role')
+          .eq('auth_user_id', user?.id ?? '')
+          .maybeSingle()
         if (cancelled) return
         if (empMine && empMine.org_id !== orgId) {
           setReason('wrong_org')
@@ -102,8 +106,12 @@ function OrgErrorScreen({ orgId, reason, detail }) {
     navigate('/login', { replace: true })
   }
   const goToMine = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
     const { data: emp } = await supabase
-      .from('employees').select('org_id, role').maybeSingle()
+      .from('employees')
+      .select('org_id, role')
+      .eq('auth_user_id', user?.id ?? '')
+      .maybeSingle()
     if (emp) {
       const scope = emp.role === 'staff' ? 'employee' : 'manager'
       navigate(`/${emp.org_id}/${scope}`, { replace: true })
