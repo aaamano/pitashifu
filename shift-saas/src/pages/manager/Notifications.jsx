@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { managerNotifications } from '../../data/mockData'
+import * as notificationsApi from '../../api/notifications'
 
 const TYPE_CONFIG = {
   submit:  { bg: '#eef2ff', color: '#3730a3', icon: '📝' },
@@ -11,8 +12,23 @@ const TYPE_CONFIG = {
 export default function ManagerNotifications() {
   const [items, setItems] = useState(managerNotifications)
 
-  const markAllRead = () => setItems(prev => prev.map(n => ({ ...n, read: true })))
-  const markRead = (id) => setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+  useEffect(() => {
+    let cancelled = false
+    notificationsApi.listNotifications()
+      .then(rows => { if (!cancelled && rows.length) setItems(rows) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  const markAllRead = async () => {
+    const ids = items.filter(n => !n.read).map(n => n.id).filter(id => typeof id === 'string')
+    setItems(prev => prev.map(n => ({ ...n, read: true })))
+    if (ids.length) { try { await notificationsApi.markAllRead(ids) } catch {} }
+  }
+  const markRead = async (id) => {
+    setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    if (typeof id === 'string') { try { await notificationsApi.markRead(id) } catch {} }
+  }
   const unread = items.filter(n => !n.read).length
 
   return (

@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { employeeNotifications } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
+import * as notificationsApi from '../../api/notifications'
 
 const TYPE_CONFIG = {
   reminder:  { bg: 'bg-amber-100',   icon: '⏰', label: 'リマインダー' },
@@ -14,8 +15,23 @@ export default function EmployeeNotifications({ base: baseProp, sukima = false }
   const base = baseProp ?? `/${orgId}/employee`
   const [items, setItems] = useState(employeeNotifications)
 
-  const markRead = (id) => setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
-  const markAllRead = () => setItems(prev => prev.map(n => ({ ...n, read: true })))
+  useEffect(() => {
+    let cancelled = false
+    notificationsApi.listNotifications()
+      .then(rows => { if (!cancelled && rows.length) setItems(rows) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  const markRead = async (id) => {
+    setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    if (typeof id === 'string') { try { await notificationsApi.markRead(id) } catch {} }
+  }
+  const markAllRead = async () => {
+    const ids = items.filter(n => !n.read).map(n => n.id).filter(id => typeof id === 'string')
+    setItems(prev => prev.map(n => ({ ...n, read: true })))
+    if (ids.length) { try { await notificationsApi.markAllRead(ids) } catch {} }
+  }
   const unread = items.filter(n => !n.read).length
 
   return (
