@@ -2,14 +2,20 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { LogoIcon } from '../../components/Logo'
 import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 
 const BRAND = '#4F46E5'
 const BRAND_DEEP = '#3730A3'
+
+// pendingBootstrap: メール確認後の初回ログイン時に bootstrap_owner_account を呼ぶための引数を保持
+const PENDING_BOOTSTRAP_KEY = 'pitashif_pending_bootstrap'
 
 export default function Signup() {
   const { signUp } = useAuth()
   const navigate = useNavigate()
 
+  const [companyName, setCompanyName] = useState('')
+  const [userName,    setUserName]    = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -20,19 +26,39 @@ export default function Signup() {
     e.preventDefault()
     setError('')
     setInfo('')
+    if (!companyName.trim()) { setError('会社名を入力してください'); return }
     setSubmitting(true)
     const { data, error: err } = await signUp(email, password)
-    setSubmitting(false)
     if (err) {
+      setSubmitting(false)
       setError(err.message)
       return
     }
-    // メール確認が有効な場合は確認案内、無効ならログインへ
+    // メール確認が有効: セッションが返らない → 確認後にbootstrapするためlocalStorageに退避
     if (data?.user && !data.session) {
-      setInfo('確認メールを送信しました。メール内のリンクから認証を完了してください。')
+      try {
+        localStorage.setItem(PENDING_BOOTSTRAP_KEY, JSON.stringify({
+          companyName: companyName.trim(),
+          userName:    userName.trim(),
+        }))
+      } catch {}
+      setSubmitting(false)
+      setInfo('確認メールを送信しました。メール内のリンクから認証完了後、ログインすると会社が自動作成されます。')
       return
     }
-    navigate('/login', { replace: true })
+    // セッションがある = メール確認OFF or 即時ログイン: bootstrap実行
+    try {
+      const { data: orgId, error: bsErr } = await supabase.rpc('bootstrap_owner_account', {
+        p_company_name: companyName.trim(),
+        p_user_name:    userName.trim() || null,
+      })
+      setSubmitting(false)
+      if (bsErr) { console.error('[signup.bootstrap]', bsErr); setError(bsErr.message); return }
+      navigate(`/${orgId}/manager`, { replace: true })
+    } catch (e) {
+      setSubmitting(false)
+      setError(e.message || '会社の作成に失敗しました')
+    }
   }
 
   return (
@@ -49,6 +75,29 @@ export default function Signup() {
         <h1 style={styles.title}>新規登録</h1>
 
         <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <label style={styles.label}>
+            <span>会社名 *</span>
+            <input
+              type="text"
+              required
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              style={styles.input}
+              placeholder="例: ピタシフ株式会社"
+            />
+          </label>
+
+          <label style={styles.label}>
+            <span>お名前（任意）</span>
+            <input
+              type="text"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              style={styles.input}
+              placeholder="例: 山田 太郎"
+            />
+          </label>
+
           <label style={styles.label}>
             <span>メールアドレス</span>
             <input

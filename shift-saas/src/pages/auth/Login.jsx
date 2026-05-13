@@ -9,14 +9,34 @@ const BRAND_DEEP = '#3730A3'
 
 // employees 行が未作成の場合のフォールバックorg
 const FALLBACK_ORG_ID = 'demo'
+const PENDING_BOOTSTRAP_KEY = 'pitashif_pending_bootstrap'
 
 // ログイン後にユーザーの org_id + role を引いて遷移先パスを決める
+// employees 行が無い場合: localStorageの pendingBootstrap を見て自動 bootstrap
 async function resolveRedirectPath() {
-  const { data, error } = await supabase
+  let { data } = await supabase
     .from('employees')
     .select('org_id, role')
     .maybeSingle()
-  if (error || !data) {
+  if (!data) {
+    // 未bootstrap → 保留中の signup 引数があればここで実行
+    try {
+      const raw = localStorage.getItem(PENDING_BOOTSTRAP_KEY)
+      if (raw) {
+        const { companyName, userName } = JSON.parse(raw)
+        const { data: orgId, error: bsErr } = await supabase.rpc('bootstrap_owner_account', {
+          p_company_name: companyName,
+          p_user_name:    userName || null,
+        })
+        if (!bsErr && orgId) {
+          localStorage.removeItem(PENDING_BOOTSTRAP_KEY)
+          return `/${orgId}/manager`
+        }
+        console.error('[login.bootstrap]', bsErr)
+      }
+    } catch (e) {
+      console.error('[login.pendingBootstrap]', e)
+    }
     return `/${FALLBACK_ORG_ID}/manager`
   }
   const scope = data.role === 'staff' ? 'employee' : 'manager'
