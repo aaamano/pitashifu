@@ -528,37 +528,34 @@ export default function Members() {
               <tr>
                 <th className="name-col">スタッフ名</th>
                 <th className="meta-col">種別</th>
+                <th className="meta-col">役職</th>
                 <th style={{ textAlign: 'left', background: '#e2e8f0', fontSize: 12.5, color: '#1e293b', fontWeight: 700, padding: '8px 12px' }}>スキル</th>
                 <th className="meta-col">時給</th>
                 <th className="meta-col">交通費/日</th>
-                <th className="meta-col">優先</th>
-                {daysConfig.map(d => (
-                  <th
-                    key={d.day}
-                    className={d.dow === '土' ? 'pita-dow-sat' : d.dow === '日' ? 'pita-dow-sun' : ''}
-                    style={{ minWidth: 52 }}
-                  >
-                    {d.day}<br />{d.dow}
-                  </th>
-                ))}
+                <th className="meta-col">生産性<br/><span style={{ fontSize:9, fontWeight:400, color:'#94a3b8' }}>件/h</span></th>
+                <th className="meta-col">残留<br/>優先度</th>
+                <th style={{ textAlign: 'left', background: '#e2e8f0', fontSize: 12.5, color: '#1e293b', fontWeight: 700, padding: '8px 12px', minWidth:140 }}>相性NGスタッフ</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={6 + daysConfig.length} style={{ padding:'48px 16px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>読み込み中…</td></tr>
+                <tr><td colSpan={9} style={{ padding:'48px 16px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>読み込み中…</td></tr>
               )}
               {!loading && members.length === 0 && (
-                <tr><td colSpan={6 + daysConfig.length} style={{ padding:'48px 16px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>
+                <tr><td colSpan={9} style={{ padding:'48px 16px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>
                   まだスタッフが登録されていません。「+ スタッフを追加」または「CSV/Excel アップロード」から登録してください。
                 </td></tr>
               )}
               {!loading && filtered.map(m => {
-                const row = shiftData[m.id] || []
                 const c   = constraints[m.id] || BLANK_CONSTRAINT
                 const pStyle = retentionStyle(c.retentionPriority)
+                const incompatNames = (c.incompatible || []).map(it => {
+                  const peer = members.find(x => x.id === it.staffId)
+                  return peer ? peer.name : null
+                }).filter(Boolean)
                 return (
                   <tr key={m.id}>
-                    {/* Name col */}
+                    {/* Name */}
                     <td className="name-col">
                       <span
                         onClick={() => openEdit(m)}
@@ -566,37 +563,35 @@ export default function Members() {
                       >
                         {m.name}
                       </span>
-                      {m.role !== 'スタッフ' && (
-                        <span style={{
-                          marginLeft: 6,
-                          fontSize: 9,
-                          padding: '1px 4px',
-                          borderRadius: 3,
-                          background: 'var(--pita-accent-soft)',
-                          color: 'var(--pita-accent-text)',
-                        }}>
-                          {m.role}
-                        </span>
-                      )}
                     </td>
 
-                    {/* Type */}
+                    {/* 種別 (雇用形態) */}
                     <td className="meta-col">
                       <span style={{
                         fontSize: 10,
-                        padding: '1px 5px',
+                        padding: '1px 6px',
                         borderRadius: 3,
                         fontWeight: 600,
                         background: m.type === 'F' ? '#d1fae5' : 'var(--pita-bg-subtle)',
                         color:      m.type === 'F' ? '#065f46' : 'var(--pita-muted)',
                       }}>
-                        {m.type}
+                        {m.type === 'F' ? '正社員' : 'パート'}
+                      </span>
+                    </td>
+
+                    {/* 役職 */}
+                    <td className="meta-col">
+                      <span style={{ fontSize:11, color:'#475569' }}>
+                        {m.role === 'owner' ? 'オーナー'
+                          : m.role === 'admin' ? '管理者'
+                          : m.role === 'manager' ? 'マネージャー'
+                          : 'スタッフ'}
                       </span>
                     </td>
 
                     {/* Skills */}
                     <td style={{ background: 'var(--pita-panel)', padding: '3px 5px', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                      {m.skills.map(sk => (
+                      {(m.skills ?? []).map(sk => (
                         <span key={sk} className={sk === 'barista' ? 'pita-skill-barista' : sk === 'cashier' ? 'pita-skill-cashier' : 'pita-skill-floor'} style={{ marginRight: 3 }}>
                           {skillLabels[sk] || sk}
                         </span>
@@ -604,13 +599,14 @@ export default function Members() {
                     </td>
 
                     {/* Wage */}
-                    <td className="meta-col">
-                      ¥{m.wage.toLocaleString()}
-                    </td>
+                    <td className="meta-col">¥{(m.wage ?? 0).toLocaleString()}</td>
 
                     {/* Transit per day */}
+                    <td className="meta-col">¥{(m.transitPerDay ?? 0).toLocaleString()}</td>
+
+                    {/* 時間生産性 */}
                     <td className="meta-col">
-                      ¥{(m.transitPerDay ?? 0).toLocaleString()}
+                      <span style={{ fontSize:11, color:'#0f172a', fontWeight:600 }}>{m.hourlyOrders ?? 8}</span>
                     </td>
 
                     {/* Retention priority */}
@@ -627,23 +623,20 @@ export default function Members() {
                       </span>
                     </td>
 
-                    {/* Day columns */}
-                    {daysConfig.map((d, di) => {
-                      const code = row[di] || 'X'
-                      const bar  = getBarProps(code)
-                      if (!bar) {
-                        return <td key={d.day} className="pita-cell-off-bar">×</td>
-                      }
-                      return (
-                        <td key={d.day} className="pita-cell-bar">
-                          <div
-                            className={'pita-bar ' + bar.type}
-                            style={{ left: bar.left + '%', width: bar.width + '%' }}
-                          />
-                          <span className="pita-code">{code}</span>
-                        </td>
-                      )
-                    })}
+                    {/* 相性NGスタッフ */}
+                    <td style={{ background: 'var(--pita-panel)', padding:'4px 6px', textAlign:'left' }}>
+                      {incompatNames.length === 0 ? (
+                        <span style={{ fontSize:10, color:'#cbd5e1' }}>—</span>
+                      ) : (
+                        <span style={{ display:'inline-flex', flexWrap:'wrap', gap:3 }}>
+                          {incompatNames.map((n, i) => (
+                            <span key={i} style={{ fontSize:10, padding:'1px 6px', borderRadius:10, background:'#fee2e2', color:'#991b1b', fontWeight:600, whiteSpace:'nowrap' }}>
+                              {n}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 )
               })}

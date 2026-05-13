@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff as mockStaff, shiftData as mockShiftData, daysConfig, dailyTargets as mockDailyTargets, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
+import { staff as mockStaff, shiftData as mockShiftData, daysConfig, dailyTargets as mockDailyTargets, STORE_NAME, YEAR_MONTH, decomposeShiftHours, calcDailyPay } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadTargets } from '../../api/targets'
 import * as employeesApi from '../../api/employees'
@@ -56,6 +56,7 @@ const ACTUAL_DAYS = 5
 // ── component ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [view, setView] = useState('A')
+  const [barTab, setBarTab] = useState('time')  // 'time' | 'cost'
   const { orgId } = useParams()
   const { stores } = useOrg()
   const storeId = stores[0]?.id
@@ -291,10 +292,21 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Shift bar panel */}
+          {/* Shift bar panel (時間/費用 タブ) */}
           <div className="pita-panel">
-            <div className="pita-panel-head">
-              シフトバー — スタッフ別
+            <div className="pita-panel-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span>シフトバー — スタッフ別</span>
+              <div style={{ display:'flex', gap:4, background:'#e8edf4', borderRadius:8, padding:3 }}>
+                {[['time', '時間'], ['cost', '費用']].map(([k, l]) => (
+                  <button key={k} onClick={() => setBarTab(k)} style={{
+                    padding:'4px 14px', borderRadius:6, fontSize:11, fontWeight: barTab === k ? 700 : 500,
+                    border:'none', cursor:'pointer', fontFamily:'inherit',
+                    background: barTab === k ? 'white' : 'transparent',
+                    color: barTab === k ? '#0f172a' : '#475569',
+                    boxShadow: barTab === k ? '0 1px 3px rgba(15,23,42,0.10)' : 'none',
+                  }}>{l}</button>
+                ))}
+              </div>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table className="pita-mgr-grid">
@@ -302,7 +314,7 @@ export default function Dashboard() {
                   <tr>
                     <th className="name-col">スタッフ</th>
                     <th className="meta-col">種別</th>
-                    <th className="meta-col">出勤</th>
+                    <th className="meta-col">{barTab === 'time' ? '出勤日数' : '費用合計'}</th>
                     {daysConfig.map(d => (
                       <th
                         key={d.day}
@@ -317,12 +329,23 @@ export default function Dashboard() {
                 <tbody>
                   {staff.map(s => {
                     const row      = shiftData[s.id] || []
-                    const workDays = row.filter(c => c && c !== 'X').length
+                    // 各日の労働時間 + 費用を計算
+                    const perDay = row.map(code => {
+                      const t = parseShiftTimes(code)
+                      if (!t) return { hasShift:false, hours:0, cost:0 }
+                      const d = decomposeShiftHours(t.start, t.end)
+                      const pay = calcDailyPay(s.wage ?? 1050, d.labor, d.overtime, d.lateNight, d.otLateNight)
+                      const cost = Math.round(pay + (s.transitPerDay ?? 0))
+                      return { hasShift:true, hours: d.labor, cost, code }
+                    })
+                    const workDays   = perDay.filter(p => p.hasShift).length
+                    const totalHours = perDay.reduce((a, p) => a + p.hours, 0)
+                    const totalCost  = perDay.reduce((a, p) => a + p.cost, 0)
                     return (
                       <tr key={s.id}>
                         <td className="name-col">
                           {s.name}
-                          {s.skills.slice(0, 2).map(sk => (
+                          {(s.skills ?? []).slice(0, 2).map(sk => (
                             <span key={sk} className={sk === 'barista' ? 'pita-skill-barista' : sk === 'cashier' ? 'pita-skill-cashier' : 'pita-skill-floor'} style={{ marginLeft: 4 }}>
                               {sk === 'barista' ? 'バリスタ' : sk === 'cashier' ? 'レジ' : 'フロア'}
                             </span>
@@ -337,29 +360,64 @@ export default function Dashboard() {
                             color:      s.type === 'F' ? '#065f46' : 'var(--pita-muted)',
                             fontWeight: 600,
                           }}>
-                            {s.type}
+                            {s.type === 'F' ? '正社員' : 'パート'}
                           </span>
                         </td>
-                        <td className="meta-col">{workDays}</td>
+                        <td className="meta-col" style={{ fontWeight:600 }}>
+                          {barTab === 'time' ? `${workDays}日 / ${totalHours.toFixed(1)}h` : `¥${totalCost.toLocaleString()}`}
+                        </td>
                         {daysConfig.map((d, di) => {
-                          const code = row[di] || 'X'
-                          const bar  = getBarProps(code)
-                          if (!bar) {
-                            return <td key={d.day} className="pita-cell-off-bar">×</td>
+                          const p = perDay[di]
+                          if (barTab === 'time') {
+                            const code = row[di] || 'X'
+                            const bar  = getBarProps(code)
+                            if (!bar) return <td key={d.day} className="pita-cell-off-bar">×</td>
+                            return (
+                              <td key={d.day} className="pita-cell-bar">
+                                <div className={'pita-bar ' + bar.type} style={{ left: bar.left + '%', width: bar.width + '%' }} />
+                                <span className="pita-code">{code}</span>
+                              </td>
+                            )
                           }
+                          // cost tab
+                          if (!p?.hasShift) return <td key={d.day} className="pita-cell-off-bar">×</td>
                           return (
-                            <td key={d.day} className="pita-cell-bar">
-                              <div
-                                className={'pita-bar ' + bar.type}
-                                style={{ left: bar.left + '%', width: bar.width + '%' }}
-                              />
-                              <span className="pita-code">{code}</span>
+                            <td key={d.day} style={{ fontSize:9, fontFamily:'monospace', background:'#fff7ed', color:'#9a3412', textAlign:'right', padding:'2px 4px' }}>
+                              ¥{p.cost.toLocaleString()}
                             </td>
                           )
                         })}
                       </tr>
                     )
                   })}
+                  {/* 合計行 */}
+                  {staff.length > 0 && (() => {
+                    const grand = staff.reduce((acc, s) => {
+                      const row = shiftData[s.id] || []
+                      for (const code of row) {
+                        const t = parseShiftTimes(code)
+                        if (!t) continue
+                        const d = decomposeShiftHours(t.start, t.end)
+                        const pay = calcDailyPay(s.wage ?? 1050, d.labor, d.overtime, d.lateNight, d.otLateNight)
+                        acc.days  += 1
+                        acc.hours += d.labor
+                        acc.cost  += pay + (s.transitPerDay ?? 0)
+                      }
+                      return acc
+                    }, { days:0, hours:0, cost:0 })
+                    return (
+                      <tr style={{ background:'#f8fafc' }}>
+                        <td className="name-col" style={{ fontWeight:700 }}>合計</td>
+                        <td className="meta-col" />
+                        <td className="meta-col" style={{ fontWeight:700, color:'#3730a3' }}>
+                          {barTab === 'time'
+                            ? `${grand.days}日 / ${grand.hours.toFixed(1)}h`
+                            : `¥${Math.round(grand.cost).toLocaleString()}`}
+                        </td>
+                        {daysConfig.map(d => <td key={d.day} />)}
+                      </tr>
+                    )
+                  })()}
                 </tbody>
               </table>
             </div>

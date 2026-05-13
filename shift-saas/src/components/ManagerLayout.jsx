@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { suffix: '/shift',         label: 'シフト管理',     Icon: IconShift,     end: false },
   { suffix: '/members',       label: 'スタッフ管理',   Icon: IconStaff,     end: false },
   { suffix: '/import',        label: 'インポート',     Icon: IconImport,    end: false },
-  { suffix: '/payroll',       label: '月次振込予定',   Icon: IconPayroll,   end: false },
+  { suffix: '/payroll',       label: '支出管理',       Icon: IconPayroll,   end: false },
   { suffix: '/settings',      label: '店舗設定',       Icon: IconStore,     end: false },
   { suffix: '/notifications', label: '通知',           Icon: IconBell,      end: false, badge: true },
 ]
