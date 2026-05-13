@@ -40,6 +40,31 @@ function isUuid(v) {
   return typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)
 }
 
+// 指定日付範囲のshiftsを assigned[dayOfMonth][slot]=[empId,...] 形式で返す
+// （version不問。Payroll/Dashboard で月単位のフィルタに使う）
+export async function loadShiftsByDateRange({ storeId, dateFrom, dateTo }) {
+  if (!storeId) return {}
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('*')
+    .eq('store_id', storeId)
+    .gte('date', dateFrom)
+    .lte('date', dateTo)
+  if (error) { console.error('[shifts.loadByDateRange]', error); throw error }
+  const out = {}
+  for (const row of data ?? []) {
+    const day = parseInt(row.date.slice(8, 10), 10)
+    const sh  = parseInt(row.start_time.slice(0, 2), 10)
+    const eh  = parseInt(row.end_time.slice(0, 2), 10)
+    for (let h = sh; h < eh; h++) {
+      const slot = `${h}:00`
+      ;(out[day] ||= {})[slot] ||= []
+      out[day][slot].push(row.employee_id)
+    }
+  }
+  return out
+}
+
 export async function loadAssignments({ versionId }) {
   if (!versionId) return {}
   const { data, error } = await supabase

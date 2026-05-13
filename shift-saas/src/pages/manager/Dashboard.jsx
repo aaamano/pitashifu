@@ -390,31 +390,45 @@ export default function Dashboard() {
                       </tr>
                     )
                   })}
-                  {/* 合計行 */}
+                  {/* 合計行 (グランド合計 + 日別合計) */}
                   {staff.length > 0 && (() => {
-                    const grand = staff.reduce((acc, s) => {
-                      const row = shiftData[s.id] || []
-                      for (const code of row) {
+                    // 日別合計
+                    const perDay = daysConfig.map((_, di) => {
+                      let hours = 0, cost = 0, count = 0
+                      for (const s of staff) {
+                        const row = shiftData[s.id] || []
+                        const code = row[di]
                         const t = parseShiftTimes(code)
                         if (!t) continue
                         const d = decomposeShiftHours(t.start, t.end)
                         const pay = calcDailyPay(s.wage ?? 1050, d.labor, d.overtime, d.lateNight, d.otLateNight)
-                        acc.days  += 1
-                        acc.hours += d.labor
-                        acc.cost  += pay + (s.transitPerDay ?? 0)
+                        hours += d.labor
+                        cost  += pay + (s.transitPerDay ?? 0)
+                        count++
                       }
-                      return acc
-                    }, { days:0, hours:0, cost:0 })
+                      return { hours, cost, count }
+                    })
+                    const grand = perDay.reduce((acc, p) => ({
+                      hours: acc.hours + p.hours,
+                      cost:  acc.cost + p.cost,
+                      days:  acc.days + p.count,
+                    }), { hours:0, cost:0, days:0 })
                     return (
-                      <tr style={{ background:'#f8fafc' }}>
-                        <td className="name-col" style={{ fontWeight:700 }}>合計</td>
+                      <tr style={{ background:'#eef0fe' }}>
+                        <td className="name-col" style={{ fontWeight:700, color:'#3730a3' }}>合計</td>
                         <td className="meta-col" />
                         <td className="meta-col" style={{ fontWeight:700, color:'#3730a3' }}>
                           {barTab === 'time'
-                            ? `${grand.days}日 / ${grand.hours.toFixed(1)}h`
+                            ? `${grand.hours.toFixed(1)}h`
                             : `¥${Math.round(grand.cost).toLocaleString()}`}
                         </td>
-                        {daysConfig.map(d => <td key={d.day} />)}
+                        {perDay.map((p, i) => (
+                          <td key={i} style={{ fontSize:9.5, fontFamily:'monospace', textAlign:'right', padding:'4px 4px', fontWeight:700, color:'#3730a3', background:'#eef0fe' }}>
+                            {barTab === 'time'
+                              ? (p.hours > 0 ? p.hours.toFixed(1) : '')
+                              : (p.cost > 0 ? `¥${Math.round(p.cost).toLocaleString()}` : '')}
+                          </td>
+                        ))}
                       </tr>
                     )
                   })()}
