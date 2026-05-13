@@ -1,8 +1,12 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import {
-  staff, shiftData, daysConfig, YEAR_MONTH,
+  staff as mockStaff, shiftData as mockShiftData, daysConfig,
   decomposeShiftHours, calcDailyPay, calcMonthlyPayroll, parseShiftTimes, PAYROLL,
 } from '../../data/mockData'
+import { useOrg } from '../../context/OrgContext'
+import * as employeesApi from '../../api/employees'
+import * as versionsApi from '../../api/versions'
+import * as shiftsApi from '../../api/shifts'
 
 const HALVES = [
   { key: 'first',  label: '前半 (1〜15日)', from: 1,  to: 15 },
@@ -10,7 +14,25 @@ const HALVES = [
   { key: 'all',    label: '全月',            from: 1,  to: 31 },
 ]
 
-function staffMonthlyTotals(staffMember, dayFrom, dayTo) {
+function deriveDayCode(daySlots, empId) {
+  if (!daySlots) return 'X'
+  const hours = []
+  for (const [slot, ids] of Object.entries(daySlots)) {
+    if (Array.isArray(ids) && ids.includes(empId)) {
+      const h = parseInt(slot.split(':')[0], 10)
+      if (!Number.isNaN(h)) hours.push(h)
+    }
+  }
+  if (!hours.length) return 'X'
+  hours.sort((a, b) => a - b)
+  const s = hours[0], e = hours[hours.length - 1] + 1
+  if (s === 9 && e === 18) return 'F'
+  if (s === 9) return `O-${e}`
+  if (e === 22) return `${s}-L`
+  return `${s}-${e}`
+}
+
+function staffMonthlyTotals(staffMember, dayFrom, dayTo, shiftData) {
   let totalHours = 0
   let totalDays = 0
   let totalPay = 0
@@ -32,8 +54,58 @@ function staffMonthlyTotals(staffMember, dayFrom, dayTo) {
 const yen = (v) => `¥${Math.round(v).toLocaleString()}`
 
 export default function Payroll() {
+  const { orgId, stores } = useOrg()
+  const storeId = stores[0]?.id
+
+  // 月選択（year/month）+ 半月選択
+  const today = new Date()
+  const [year,  setYear]  = useState(2026)
+  const [month, setMonth] = useState(4)
   const [half, setHalf] = useState('first')
   const period = HALVES.find(h => h.key === half)
+
+  const monthLabel = `${year}年${month}月`
+  const lastDay = new Date(year, month, 0).getDate()
+  const dayFromInPeriod = period.from
+  const dayToInPeriod   = Math.min(period.to, lastDay)
+
+  const prevMonth = () => {
+    if (month === 1) { setYear(y => y - 1); setMonth(12) } else { setMonth(m => m - 1) }
+  }
+  const nextMonth = () => {
+    if (month === 12) { setYear(y => y + 1); setMonth(1) } else { setMonth(m => m + 1) }
+  }
+
+  // DB社員 + 最新versionのassignedをロード
+  const [dbEmployees, setDbEmployees] = useState([])
+  const [dbAssigned,  setDbAssigned]  = useState({})
+  useEffect(() => {
+    if (!orgId || !storeId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const emps = await employeesApi.listEmployees(orgId)
+        if (cancelled) return
+        setDbEmployees(emps)
+        const versions = await versionsApi.listVersions(storeId)
+        if (cancelled || !versions?.length) return
+        const target = versions.find(v => v.status === 'confirmed') || versions[0]
+        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
+        if (!cancelled) setDbAssigned(assigned ?? {})
+      } catch (e) { console.error('[Payroll.load]', e) }
+    })()
+    return () => { cancelled = true }
+  }, [orgId, storeId])
+
+  const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
+  const shiftData = useMemo(() => {
+    if (!dbEmployees.length) return mockShiftData
+    const out = {}
+    for (const emp of dbEmployees) {
+      out[emp.id] = daysConfig.map(d => deriveDayCode(dbAssigned?.[d.day], emp.id))
+    }
+    return out
+  }, [dbEmployees, dbAssigned])
   const [showCsvModal,    setShowCsvModal]    = useState(false)
   const [pendingCsvFile,  setPendingCsvFile]  = useState(null)
   const [csvMsg,          setCsvMsg]          = useState('')
@@ -108,13 +180,13 @@ export default function Payroll() {
   }
 
   const rows = useMemo(() => staff.map(s => {
-    const totals  = staffMonthlyTotals(s, period.from, period.to)
+    const totals  = staffMonthlyTotals(s, dayFromInPeriod, dayToInPeriod, shiftData)
     const payroll = calcMonthlyPayroll(s, totals)
     const ov = manualOverrides[s.name]
     const mergedTotals  = ov ? { ...totals,  ...(ov.totalHours  != null ? { totalHours:  ov.totalHours  } : {}), ...(ov.totalDays != null ? { totalDays: ov.totalDays } : {}), ...(ov.totalPay != null ? { totalPay: ov.totalPay } : {}), ...(ov.totalTransit != null ? { totalTransit: ov.totalTransit } : {}) } : totals
     const mergedPayroll = ov ? { ...payroll, ...(ov.socialIns != null ? { socialIns: ov.socialIns } : {}), ...(ov.empIns != null ? { empIns: ov.empIns } : {}), ...(ov.pension != null ? { pension: ov.pension } : {}), ...(ov.incomeTax != null ? { incomeTax: ov.incomeTax } : {}), ...(ov.finalPay != null ? { finalPay: ov.finalPay } : {}) } : payroll
     return { s, totals: mergedTotals, payroll: mergedPayroll, hasOverride: !!ov }
-  }), [half, manualOverrides])
+  }), [staff, shiftData, half, dayFromInPeriod, dayToInPeriod, manualOverrides])
 
   const grand = useMemo(() => rows.reduce((acc, { totals, payroll }) => ({
     totalHours:    acc.totalHours    + totals.totalHours,
@@ -146,11 +218,17 @@ export default function Payroll() {
     <div className="mgr-page">
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{YEAR_MONTH}</div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>月次振込予定</h1>
-          <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>シフト確定済みデータから算出。前半/後半/全月で集計を切り替えできます。</p>
+          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{monthLabel}</div>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>支出管理</h1>
+          <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>シフト確定済みデータから算出。月・前半/後半/全月で集計を切り替えできます。</p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          {/* 月ナビゲーション */}
+          <div style={{ display:'flex', alignItems:'center', gap:6, padding:'4px 8px', background:'white', border:'1px solid #dde5f0', borderRadius:8 }}>
+            <button onClick={prevMonth} style={{ background:'none', border:'none', cursor:'pointer', fontSize:14, color:'#475569', padding:'2px 6px' }} title="前月">←</button>
+            <span style={{ fontSize:12, fontWeight:600, color:'#0f172a', minWidth:80, textAlign:'center' }}>{monthLabel}</span>
+            <button onClick={nextMonth} style={{ background:'none', border:'none', cursor:'pointer', fontSize:14, color:'#475569', padding:'2px 6px' }} title="翌月">→</button>
+          </div>
           {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
           <button onClick={() => setShowCsvModal(true)} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>CSV アップロード</button>
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
@@ -241,7 +319,7 @@ export default function Payroll() {
           <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:520, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
             <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
-                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>月次振込予定 CSV アップロード</div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>支出管理 CSV アップロード</div>
                 <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>振込データのエクスポート/手動調整インポートができます</div>
               </div>
               <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
