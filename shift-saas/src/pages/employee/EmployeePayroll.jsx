@@ -80,6 +80,8 @@ function GaugeArc({ value, max }) {
   )
 }
 
+const pad = (n) => String(n).padStart(2, '0')
+
 export default function EmployeePayroll({ base: baseProp, sukima = false }) {
   const { orgId } = useParams()
   const base = baseProp ?? `/${orgId}/employee`
@@ -88,23 +90,36 @@ export default function EmployeePayroll({ base: baseProp, sukima = false }) {
   const { me } = useMe()
   const meDisp = me ?? mockStaff[0]
 
-  // 最新versionから自分のシフトを抽出
-  const [myShifts, setMyShifts] = useState(Array(30).fill('X'))
+  // 月選択
+  const today = new Date()
+  const [year,  setYear]  = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const monthLabel = `${year}年${month}月`
+  const lastDayOfMonth = new Date(year, month, 0).getDate()
+  const prevMonth = () => {
+    if (month === 1) { setYear(y => y - 1); setMonth(12) } else { setMonth(m => m - 1) }
+  }
+  const nextMonth = () => {
+    if (month === 12) { setYear(y => y + 1); setMonth(1) } else { setMonth(m => m + 1) }
+  }
+
+  // 選択月のシフトを date 範囲でロード
+  const [myShifts, setMyShifts] = useState([])
   useEffect(() => {
-    if (!me || !storeId) return
+    if (!me || !storeId) { setMyShifts([]); return }
     let cancelled = false
-    ;(async () => {
-      try {
-        const versions = await versionsApi.listVersions(storeId)
-        if (cancelled || !versions?.length) return
-        const target = versions.find(v => v.status === 'confirmed') || versions[0]
-        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
-        if (!cancelled) setMyShifts(daysConfig.map(d => deriveDayCode(assigned?.[d.day], me.id)))
-      } catch (e) { console.error('[EmployeePayroll.load]', e) }
-    })()
+    const dateFrom = `${year}-${pad(month)}-01`
+    const dateTo   = `${year}-${pad(month)}-${pad(lastDayOfMonth)}`
+    shiftsApi.loadShiftsByDateRange({ storeId, dateFrom, dateTo })
+      .then(assigned => {
+        if (cancelled) return
+        const codes = Array.from({ length: lastDayOfMonth }, (_, i) => deriveDayCode(assigned?.[i + 1], me.id))
+        setMyShifts(codes)
+      })
+      .catch(e => console.error('[EmployeePayroll.load]', e))
     return () => { cancelled = true }
-  }, [me, storeId])
-  const myShiftsDisp = me ? myShifts : (mockShiftData[mockStaff[0].id] || [])
+  }, [me, storeId, year, month, lastDayOfMonth])
+  const myShiftsDisp = myShifts.length ? myShifts : Array(lastDayOfMonth).fill('X')
   const workDays  = myShiftsDisp.filter(c => c && c !== 'X').length
   const workHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
   const estPay    = workHours * (meDisp.wage ?? 1050)
@@ -124,11 +139,13 @@ export default function EmployeePayroll({ base: baseProp, sukima = false }) {
 
   return (
     <>
-      {/* Header */}
+      {/* Header with month navigation */}
       <div className="pita-phone-header" style={{ justifyContent: 'space-between' }}>
-        <div style={{ width: 32 }} />
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#0F172A' }}>{YEAR_MONTH}</div>
-        <Link to={`${base}/settings`} style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', fontSize: 18 }}>⚙️</Link>
+        <button onClick={prevMonth} aria-label="前月"
+          style={{ background:'none', border:'none', color:'#4F46E5', fontSize:18, fontWeight:700, cursor:'pointer', padding:'4px 10px' }}>‹</button>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#0F172A' }}>{monthLabel}</div>
+        <button onClick={nextMonth} aria-label="翌月"
+          style={{ background:'none', border:'none', color:'#4F46E5', fontSize:18, fontWeight:700, cursor:'pointer', padding:'4px 10px' }}>›</button>
       </div>
 
       {/* 月 / 年 tab switch */}
@@ -205,15 +222,6 @@ export default function EmployeePayroll({ base: baseProp, sukima = false }) {
               }}>
                 給料見込の対象期間・内訳を確認する
               </button>
-            </div>
-
-            {/* CTA banner */}
-            <div style={{ margin: '0 16px 16px', borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${INDIGO}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 14px', background: INDIGO, cursor: 'pointer' }}>
-                <span style={{ background: 'white', color: INDIGO, fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 5, flexShrink: 0, whiteSpace: 'nowrap' }}>🎁 特典あり</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'white', flex: 1 }}>シフトを提出して収入を増やす</span>
-                <span style={{ color: 'white', fontSize: 14, fontWeight: 700 }}>›</span>
-              </div>
             </div>
 
             {/* Breakdown table */}

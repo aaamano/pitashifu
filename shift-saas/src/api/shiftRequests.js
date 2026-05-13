@@ -170,17 +170,19 @@ export async function listSubmissions({ storeId }) {
   for (const p of periods) {
     const myReqs = byPeriod[p.id]
     if (!myReqs?.length) continue
-    const startDate = new Date(p.period_start + 'T00:00:00')
-    const endDate   = new Date(p.period_end + 'T00:00:00')
-    const dayCount  = Math.floor((endDate - startDate) / 86400000) + 1
-    const shiftRow  = Array(dayCount).fill('X')
+    // UIの shiftRow[i] = day-of-month (i+1) として組み立てる
+    // 月の最大日数分の配列を用意
+    const year  = parseInt(p.period_start.slice(0, 4), 10)
+    const month = parseInt(p.period_start.slice(5, 7), 10)
+    const lastDayOfMonth = new Date(year, month, 0).getDate()
+    const shiftRow  = Array(lastDayOfMonth).fill('X')
     let submitted = null
     let confirmed = false
     let anyDraft  = false
     for (const r of myReqs) {
-      const date = new Date(r.date + 'T00:00:00')
-      const idx = Math.floor((date - startDate) / 86400000)
-      if (idx >= 0 && idx < dayCount) {
+      const day = parseInt(r.date.slice(8, 10), 10)
+      const idx = day - 1
+      if (idx >= 0 && idx < shiftRow.length) {
         if (r.is_available && r.preferred_start && r.preferred_end) {
           const sh = parseInt(r.preferred_start.slice(0, 2)) + parseInt(r.preferred_start.slice(3, 5)) / 60
           const eh = parseInt(r.preferred_end.slice(0, 2))   + parseInt(r.preferred_end.slice(3, 5))   / 60
@@ -219,20 +221,29 @@ export async function saveSubmission({ storeId, periodName, shiftRow, submit }) 
     .eq('period_id', period.id)
     .eq('employee_id', myId)
 
-  // shiftRow を bulk insert
+  // UI の shiftRow は array[index] = day-of-month の (index + 1) に対応する
+  // 例: shiftRow[4] = 5/5 用の希望。period_start からの offset ではない。
+  const parsed = parsePeriodName(periodName)
+  if (!parsed) throw new Error('期間名が不正: ' + periodName)
+  const startDay = parsePeriodName(periodName) // already parsed
+  // 期間内の day 範囲
+  const periodFirstDay = period.period_start.slice(8, 10) * 1
+  const periodLastDay  = period.period_end.slice(8, 10) * 1
+
   const rows = []
   for (let i = 0; i < shiftRow.length; i++) {
-    const d = new Date(startDate)
-    d.setDate(d.getDate() + i)
-    const dateStr = d.toISOString().slice(0, 10)
-    const parsed = parseCode(shiftRow[i])
-    if (parsed) {
+    const day = i + 1
+    // 期間外の日付はスキップ（前半なら 16-31, 後半なら 1-15 をスキップ）
+    if (day < periodFirstDay || day > periodLastDay) continue
+    const dateStr = `${parsed.year}-${pad(parsed.month)}-${pad(day)}`
+    const code = parseCode(shiftRow[i])
+    if (code) {
       rows.push({
         period_id:       period.id,
         employee_id:     myId,
         date:            dateStr,
-        preferred_start: hhmm(parsed.start),
-        preferred_end:   hhmm(parsed.end),
+        preferred_start: hhmm(code.start),
+        preferred_end:   hhmm(code.end),
         is_available:    true,
         status,
         submitted_at:    submittedAt,
