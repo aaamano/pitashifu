@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { staff as initialStaff, shiftData, daysConfig, skillLabels, YEAR_MONTH, staffConstraints as initialConstraints } from '../../data/mockData'
-import { api } from '../../api/index.js'
+import { useOrg } from '../../context/OrgContext'
+import * as employeesApi from '../../api/employees'
 import { readWorkbookFromFile, extractStaffList } from '../../utils/excelImport.js'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -94,15 +95,19 @@ const BLANK_CONSTRAINT = { incompatible: [], targetEarnings: 0, retentionPriorit
 const MODAL_TABS = ['基本情報', '連絡先・住所', '固定シフト', 'マネージャー設定']
 
 export default function Members() {
+  const { orgId } = useOrg()
   const [members,         setMembers]         = useState(initialStaff)
   const [constraints,     setConstraints]     = useState(initialConstraints)
+  const [errMsg,          setErrMsg]          = useState('')
 
-  // Load staff from DB on mount
   useEffect(() => {
-    api.getStaff()
-      .then(data => { if (data?.length) setMembers(data) })
-      .catch(() => {})
-  }, [])
+    if (!orgId) return
+    let cancelled = false
+    employeesApi.listEmployees(orgId)
+      .then(rows => { if (!cancelled && rows.length) setMembers(rows) })
+      .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
+    return () => { cancelled = true }
+  }, [orgId])
   const [showModal,       setShowModal]       = useState(false)
   const [activeTab,       setActiveTab]       = useState(0)
   const [form,            setForm]            = useState(BLANK_MEMBER)
@@ -352,16 +357,27 @@ export default function Members() {
       ? `${form.lastName || ''}${form.lastName && form.firstName ? ' ' : ''}${form.firstName || ''}`.trim()
       : form.name
     if (!composedName.trim()) return
-    const id = form.id || (members.length + 100)
-    const saved = { ...form, id, name: composedName }
-    if (form.id) {
-      setMembers(prev => prev.map(m => m.id === form.id ? saved : m))
-      api.updateStaff(form.id, saved).catch(() => {})
-    } else {
-      const created = await api.createStaff(saved).catch(() => null)
-      setMembers(prev => [...prev, created || saved])
+    const ui = {
+      ...form,
+      name: composedName,
+      retentionPriority: constraintForm.retentionPriority,
+      targetEarnings:    constraintForm.targetEarnings,
     }
-    setConstraints(prev => ({ ...prev, [id]: constraintForm }))
+    let saved
+    try {
+      if (form.id) {
+        saved = await employeesApi.updateEmployee(form.id, ui)
+        setMembers(prev => prev.map(m => m.id === form.id ? { ...m, ...saved } : m))
+      } else {
+        if (!orgId) throw new Error('orgId未取得')
+        saved = await employeesApi.createEmployee({ orgId, ui })
+        setMembers(prev => [...prev, saved])
+      }
+      setConstraints(prev => ({ ...prev, [saved.id]: constraintForm }))
+    } catch (e) {
+      setErrMsg(e.message || '保存に失敗しました')
+      return
+    }
     setShowModal(false)
   }
 
@@ -400,6 +416,12 @@ export default function Members() {
           <button onClick={openNew} className="mgr-btn-primary">+ スタッフを追加</button>
         </div>
       </div>
+
+      {errMsg && (
+        <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+          {errMsg}
+        </div>
+      )}
 
       {/* Search + filter controls */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1033,11 +1055,14 @@ export default function Members() {
               <div className="flex items-center gap-3">
                 {form.id && (
                   <button
-                    onClick={() => {
-                      if (confirm(`${form.lastName || form.name || 'このスタッフ'} を退職させますか？`)) {
+                    onClick={async () => {
+                      if (!confirm(`${form.lastName || form.name || 'このスタッフ'} を退職させますか？`)) return
+                      try {
+                        await employeesApi.deleteEmployee(form.id)
                         setMembers(prev => prev.filter(m => m.id !== form.id))
-                        api.deleteStaff(form.id).catch(() => {})
                         setShowModal(false)
+                      } catch (e) {
+                        setErrMsg(e.message || '削除に失敗しました')
                       }
                     }}
                     className="text-xs text-red-600 hover:underline"

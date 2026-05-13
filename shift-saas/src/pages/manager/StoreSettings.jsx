@@ -1,13 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { storeConfig as initialConfig, YEAR_MONTH, skillLabels as initialSkillLabels, DEFAULT_STORE_ADDRESS } from '../../data/mockData'
-
-const ADDR_KEY = 'pitashif_store_address'
-const loadAddress = () => {
-  try { return localStorage.getItem(ADDR_KEY) || DEFAULT_STORE_ADDRESS } catch { return DEFAULT_STORE_ADDRESS }
-}
-const saveAddress = (addr) => {
-  try { localStorage.setItem(ADDR_KEY, addr) } catch {}
-}
+import { useOrg } from '../../context/OrgContext'
+import { loadSettings, saveSettings } from '../../api/orgSettings'
 
 // Hardcoded color lookup (avoids Tailwind purge issues with dynamic strings)
 const TASK_COLORS = {
@@ -30,14 +24,41 @@ const MINS  = ['00', '15', '30', '45']
 export { TASK_COLORS }
 
 export default function StoreSettings() {
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id
+
   const [config,    setConfig]    = useState(initialConfig)
-  const [address,   setAddress]   = useState(loadAddress)
+  const [address,   setAddress]   = useState(DEFAULT_STORE_ADDRESS)
   const [saved,     setSaved]     = useState(false)
+  const [errMsg,    setErrMsg]    = useState('')
+  const [saving,    setSaving]    = useState(false)
   const [editTask,  setEditTask]  = useState(null)
   const [taskForm,  setTaskForm]  = useState(null)
   const [skills,    setSkills]    = useState(Object.entries(initialSkillLabels).map(([key, label]) => ({ key, label })))
   const [newSkill,  setNewSkill]  = useState({ key: '', label: '' })
-  const [editSkill, setEditSkill] = useState(null)  // index being edited
+  const [editSkill, setEditSkill] = useState(null)
+
+  useEffect(() => {
+    if (!storeId) return
+    let cancelled = false
+    loadSettings(storeId)
+      .then(s => {
+        if (cancelled || !s) return
+        setConfig(prev => ({
+          ...prev,
+          openHour:        s.openHour        ?? prev.openHour,
+          closeHour:       s.closeHour       ?? prev.closeHour,
+          slotInterval:    s.slotInterval    ?? prev.slotInterval,
+          avgProductivity: s.avgProductivity ?? prev.avgProductivity,
+          breakRules:      s.breakRules      ?? prev.breakRules,
+          specialTasks:    s.specialTasks    ?? prev.specialTasks,
+        }))
+        if (s.address) setAddress(s.address)
+        if (s.skillLabels) setSkills(Object.entries(s.skillLabels).map(([key, label]) => ({ key, label })))
+      })
+      .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
+    return () => { cancelled = true }
+  }, [storeId])
 
   const addSkill = () => {
     if (!newSkill.key.trim() || !newSkill.label.trim()) return
@@ -48,7 +69,25 @@ export default function StoreSettings() {
   const removeSkill = (idx) => setSkills(prev => prev.filter((_, i) => i !== idx))
   const updateSkill = (idx, field, val) => setSkills(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s))
 
-  const handleSave = () => { saveAddress(address); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  const handleSave = async () => {
+    if (!storeId) { setErrMsg('店舗IDが取得できません'); return }
+    setSaving(true); setErrMsg('')
+    const skillLabels = skills.reduce((acc, s) => { acc[s.key] = s.label; return acc }, {})
+    const settings = {
+      openHour: config.openHour, closeHour: config.closeHour,
+      slotInterval: config.slotInterval, avgProductivity: config.avgProductivity,
+      breakRules: config.breakRules, specialTasks: config.specialTasks,
+      skillLabels, address,
+    }
+    try {
+      await saveSettings(storeId, settings)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setErrMsg(e.message || '保存に失敗しました')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const openEdit = (task) => {
     const [sh, sm] = task.startTime.split(':').map(Number)
@@ -85,10 +124,16 @@ export default function StoreSettings() {
           <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>店舗設定</h1>
           <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>各店舗ごとに個別設定できます</p>
         </div>
-        <button onClick={handleSave} className="mgr-btn-primary">
-          {saved ? '✓ 保存しました' : '設定を保存'}
+        <button onClick={handleSave} disabled={saving || !storeId} className="mgr-btn-primary">
+          {saving ? '保存中…' : saved ? '✓ 保存しました' : '設定を保存'}
         </button>
       </div>
+
+      {errMsg && (
+        <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+          {errMsg}
+        </div>
+      )}
 
       {/* Basic settings */}
       <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>

@@ -1,6 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { dailyTargets, YEAR_MONTH, storeConfig, calcRequiredStaff, ORDER_DISTRIBUTION, SALES_PATTERNS } from '../../data/mockData'
 import { readWorkbookFromFile, extractSalesPatterns, matchPatternKey } from '../../utils/excelImport.js'
+import { useOrg } from '../../context/OrgContext'
+import { loadTargets, saveTargets } from '../../api/targets'
+
+const TARGET_YEAR  = 2026
+const TARGET_MONTH = 4
 
 const PATTERN_HOURS = Array.from({ length: 14 }, (_, i) => i + 9) // 9-22
 
@@ -90,7 +95,24 @@ function initHourly(d) {
 }
 
 export default function Targets() {
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id
   const [allTargets, setAllTargets] = useState(dailyTargets)
+  const [saving, setSaving] = useState(false)
+  const [errMsg, setErrMsg] = useState('')
+
+  useEffect(() => {
+    if (!storeId) return
+    let cancelled = false
+    loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH })
+      .then(dbRows => {
+        if (cancelled || dbRows.length === 0) return
+        const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
+        setAllTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
+      })
+      .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
+    return () => { cancelled = true }
+  }, [storeId])
   const [half, setHalf] = useState('first')   // 'first' | 'second'
   const targets = allTargets.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
   const setTargets = (updater) => setAllTargets(prev => typeof updater === 'function' ? updater(prev) : updater)
@@ -276,7 +298,18 @@ export default function Targets() {
     ))
   }
 
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  const handleSave = async () => {
+    if (!storeId) { setErrMsg('店舗IDが取得できません'); return }
+    setSaving(true); setErrMsg('')
+    try {
+      await saveTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH, targets: allTargets })
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setErrMsg(e.message || '保存に失敗しました')
+    } finally {
+      setSaving(false)
+    }
+  }
 
 
   const totalSales     = targets.reduce((s, d) => s + d.sales, 0)
@@ -328,10 +361,15 @@ export default function Targets() {
           </button>
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
             onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
-          <button onClick={handleSave} className="mgr-btn-primary">
-            {saved ? '✓ 保存しました' : '保存する'}
+          <button onClick={handleSave} disabled={saving || !storeId} className="mgr-btn-primary">
+            {saving ? '保存中…' : saved ? '✓ 保存しました' : '保存する'}
           </button>
         </div>
+        {errMsg && (
+          <div style={{ width:'100%', marginTop:10, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+            {errMsg}
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}
