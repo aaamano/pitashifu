@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { staff, daysConfig, YEAR_MONTH, shiftSubmissions as initialSubmissions } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
-import { api } from '../../api/index.js'
+import { useOrg } from '../../context/OrgContext'
+import { listSubmissions, saveSubmission } from '../../api/shiftRequests'
 
 const ME = staff[0]
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 8)
@@ -49,15 +50,20 @@ function toCode(sh, eh) {
 export default function ShiftSubmit({ base: baseProp, sukima = false }) {
   const { orgId } = useParams()
   const base = baseProp ?? `/${orgId}/employee`
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id
   const [submissions, setSubmissions] = useState(initialSubmissions)
   const [mode, setMode]               = useState('list')
+  const [errMsg, setErrMsg]           = useState('')
 
-  // Load from DB on mount
   useEffect(() => {
-    api.getSubmissions(ME.id)
-      .then(data => { if (data?.length) setSubmissions(data) })
-      .catch(() => {})
-  }, [])
+    if (!storeId) return
+    let cancelled = false
+    listSubmissions({ storeId })
+      .then(rows => { if (!cancelled && rows.length) setSubmissions(rows) })
+      .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
+    return () => { cancelled = true }
+  }, [storeId])
   const [active, setActive]           = useState(null)
   const [editRow, setEditRow]         = useState([])
   const [previewRange, setPreviewRange] = useState(null)
@@ -156,32 +162,20 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
     const s = { _isNew: true, id: Date.now(), period: '2026年5月 後半', submittedAt: null, lastEditedAt: null, status: 'draft', shiftRow: Array(15).fill('X') }
     setActive(s); setEditRow(Array(15).fill('X')); setMode('edit')
   }
-  const saveDraft = async () => {
-    const now = new Date().toLocaleString('ja-JP').replace(/\//g,'-').slice(0,16)
-    const base = { staffId: ME.id, period: active.period, shiftRow: [...editRow], lastEditedAt: now, status: active.status === 'confirmed' ? 'confirmed' : 'draft' }
-    if (active._isNew) {
-      const created = await api.createSubmission({ ...base, submittedAt: null }).catch(() => null)
-      const u = created || { ...active, ...base }
-      setSubmissions(prev => [...prev, u])
-    } else {
-      api.updateSubmission(active.id, base).catch(() => {})
-      setSubmissions(prev => prev.map(s => s.id === active.id ? { ...s, ...base } : s))
+  const persist = async (submit) => {
+    if (!storeId) { setErrMsg('店舗IDが取得できません'); return }
+    try {
+      await saveSubmission({ storeId, periodName: active.period, shiftRow: [...editRow], submit })
+      // 再読込でstate同期
+      const fresh = await listSubmissions({ storeId })
+      setSubmissions(fresh)
+      setMode('list')
+    } catch (e) {
+      setErrMsg(e.message || '保存に失敗しました')
     }
-    setMode('list')
   }
-  const submitShift = async () => {
-    const now = new Date().toLocaleString('ja-JP').replace(/\//g,'-').slice(0,16)
-    const base = { staffId: ME.id, period: active.period, shiftRow: [...editRow], submittedAt: now, lastEditedAt: now, status: 'submitted' }
-    if (active._isNew) {
-      const created = await api.createSubmission(base).catch(() => null)
-      const u = created || { ...active, ...base }
-      setSubmissions(prev => [...prev, u])
-    } else {
-      api.updateSubmission(active.id, base).catch(() => {})
-      setSubmissions(prev => prev.map(s => s.id === active.id ? { ...s, ...base } : s))
-    }
-    setMode('list')
-  }
+  const saveDraft  = () => persist(false)
+  const submitShift = () => persist(true)
 
   // ── Confirmed view (read-only) ──
   if (mode === 'edit' && active.status === 'confirmed') return (
@@ -313,6 +307,11 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
         <button onClick={openNew} style={{ fontSize:11, height:32, padding:'0 14px', borderRadius:16, border:'none', background:'#5B67F8', color:'white', fontWeight:600, cursor:'pointer' }}>+ 新規作成</button>
       </div>
       <div className="pita-phone-body">
+        {errMsg && (
+          <div style={{ margin:'8px 12px', padding:'8px 10px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:6, fontSize:11 }}>
+            {errMsg}
+          </div>
+        )}
         <div style={{ padding:'8px 0' }}>
           {submissions.length === 0 && (
             <div style={{ textAlign:'center', padding:'40px 16px' }}>
