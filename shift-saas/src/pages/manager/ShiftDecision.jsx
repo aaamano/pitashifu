@@ -525,9 +525,19 @@ export default function ShiftDecision() {
     for (let i = 0; i < AI_STAGES.length; i++) { setAIStage(i); await new Promise(r => setTimeout(r, 700)) }
     const days = [...aiDays].sort((a, b) => a - b)
     const { result, avoidedConflicts, staffWithTargets, totalAssigned } = runAIForDays(days, slots, staff, staffConstraints, dailyTargets, specialTasks)
-    setAssigned(prev => ({ ...prev, ...result }))
+    const merged = { ...assigned, ...result }
+    setAssigned(merged)
     setAIResult({ days, avoidedConflicts, staffWithTargets, totalAssigned })
     setAIPhase('done')
+    // AI配置結果を自動でDBに保存
+    if (storeIdForSave && versionId) {
+      try {
+        await shiftsApi.saveAssignments({ versionId, storeId: storeIdForSave, assignedByDay: merged })
+      } catch (e) {
+        console.error('[ShiftDecision.runAI.autoSave]', e)
+        setSaveError('AI配置の自動保存に失敗: ' + (e.message || e))
+      }
+    }
   }
   const toggleAIDay = (day) => setAIDays(prev => { const n = new Set(prev); n.has(day) ? n.delete(day) : n.add(day); return n })
 

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { staff as initialStaff, shiftData, daysConfig, skillLabels, YEAR_MONTH, staffConstraints as initialConstraints } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import * as employeesApi from '../../api/employees'
+import * as incompatApi from '../../api/incompatibilities'
 import { readWorkbookFromFile, extractStaffList } from '../../utils/excelImport.js'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -106,8 +107,29 @@ export default function Members() {
     if (!orgId) return
     let cancelled = false
     setLoading(true)
-    employeesApi.listEmployees(orgId)
-      .then(rows => { if (!cancelled) setMembers(rows ?? []) })
+    Promise.all([
+      employeesApi.listEmployees(orgId),
+      incompatApi.listIncompatibilities(orgId),
+    ])
+      .then(([emps, incompats]) => {
+        if (cancelled) return
+        setMembers(emps ?? [])
+        // incompatibilities → constraints マップ
+        const cmap = {}
+        for (const it of incompats ?? []) {
+          if (!cmap[it.employeeId]) cmap[it.employeeId] = { incompatible: [], targetEarnings: 0, retentionPriority: 5 }
+          cmap[it.employeeId].incompatible.push({ staffId: it.incompatibleWith, severity: it.severity })
+        }
+        // employees の retention/target を反映
+        for (const e of emps ?? []) {
+          if (!cmap[e.id]) cmap[e.id] = { incompatible: [], targetEarnings: e.targetEarnings ?? 0, retentionPriority: e.retentionPriority ?? 5 }
+          else {
+            cmap[e.id].targetEarnings    = e.targetEarnings    ?? 0
+            cmap[e.id].retentionPriority = e.retentionPriority ?? 5
+          }
+        }
+        setConstraints(cmap)
+      })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -394,6 +416,19 @@ export default function Members() {
         if (!orgId) throw new Error('orgId未取得')
         saved = await employeesApi.createEmployee({ orgId, ui })
         setMembers(prev => [...prev, saved])
+      }
+      // 相性NGも完全置換で保存
+      try {
+        await incompatApi.setIncompatibilities(
+          saved.id,
+          (constraintForm.incompatible || []).map(i => ({
+            incompatibleWith: i.staffId,
+            severity:         i.severity,
+          })),
+        )
+      } catch (e) {
+        console.error('[Members.handleSave.incompat]', e)
+        setErrMsg('相性NGの保存に失敗: ' + (e.message || ''))
       }
       setConstraints(prev => ({ ...prev, [saved.id]: constraintForm }))
     } catch (e) {
