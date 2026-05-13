@@ -13,13 +13,16 @@ const TYPE_CONFIG = {
 export default function EmployeeNotifications({ base: baseProp, sukima = false }) {
   const { orgId } = useParams()
   const base = baseProp ?? `/${orgId}/employee`
-  const [items, setItems] = useState(employeeNotifications)
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     notificationsApi.listNotifications()
-      .then(rows => { if (!cancelled && rows.length) setItems(rows) })
-      .catch(() => {})
+      .then(rows => { if (!cancelled) setItems(rows ?? []) })
+      .catch(e => console.error('[employee.Notifications.load]', e))
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
 
@@ -53,12 +56,17 @@ export default function EmployeeNotifications({ base: baseProp, sukima = false }
 
       <div className="pita-phone-body">
         <div style={{ padding:'6px 0' }}>
-          {items.length === 0 && (
+          {loading && (
             <div style={{ textAlign:'center', padding:'40px 16px', color:'var(--pita-faint)', fontSize:12 }}>
-              通知はありません
+              読み込み中…
             </div>
           )}
-          {items.map(n => {
+          {!loading && items.length === 0 && (
+            <div style={{ textAlign:'center', padding:'40px 16px', color:'var(--pita-faint)', fontSize:12 }}>
+              通知はまだありません
+            </div>
+          )}
+          {!loading && items.map(n => {
             const cfg = TYPE_CONFIG[n.type] || TYPE_CONFIG.info
             return (
               <div

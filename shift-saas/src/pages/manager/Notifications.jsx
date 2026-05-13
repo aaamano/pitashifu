@@ -12,7 +12,8 @@ const TYPE_CONFIG = {
 
 export default function ManagerNotifications() {
   const { orgId } = useOrg()
-  const [items, setItems] = useState(managerNotifications)
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
   const [showCompose, setShowCompose] = useState(false)
   const [composeForm, setComposeForm] = useState({ type: 'info', title: '', body: '' })
   const [errMsg, setErrMsg] = useState('')
@@ -20,9 +21,11 @@ export default function ManagerNotifications() {
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     notificationsApi.listNotifications()
-      .then(rows => { if (!cancelled && rows.length) setItems(rows) })
-      .catch(() => {})
+      .then(rows => { if (!cancelled) setItems(rows ?? []) })
+      .catch(e => { if (!cancelled) { console.error('[Notifications.load]', e); setErrMsg(e.message || '読み込みに失敗しました') } })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
 
@@ -125,10 +128,13 @@ export default function ManagerNotifications() {
 
       {/* Notification list */}
       <div className="mgr-card">
-        {items.length === 0 && (
-          <div style={{ padding:'48px 24px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>通知はありません</div>
+        {loading && (
+          <div style={{ padding:'48px 24px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>読み込み中…</div>
         )}
-        {items.map((n, i) => {
+        {!loading && items.length === 0 && (
+          <div style={{ padding:'48px 24px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>通知はまだありません。「＋ 通知を作成」から作成できます。</div>
+        )}
+        {!loading && items.map((n, i) => {
           const cfg = TYPE_CONFIG[n.type] || TYPE_CONFIG.info
           return (
             <div

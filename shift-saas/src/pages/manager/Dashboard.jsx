@@ -38,8 +38,11 @@ export default function Dashboard() {
   const storeId = stores[0]?.id
   const base = `/${orgId}/manager`
 
-  // dailyTargets を DB から動的に読み込む（DBにあればその値、無ければmockData）
-  const [dailyTargets, setDailyTargets] = useState(mockDailyTargets)
+  // mockData の flash を防ぐためスケルトン（値ゼロ）で初期化
+  const skeleton = useMemo(() => mockDailyTargets.map(d => ({
+    ...d, sales: 0, customers: 0, avgSpend: 0, orders: 0, laborCost: 0,
+  })), [])
+  const [dailyTargets, setDailyTargets] = useState(skeleton)
   useEffect(() => {
     if (!storeId) return
     let cancelled = false

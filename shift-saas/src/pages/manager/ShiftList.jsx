@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { YEAR_MONTH } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
@@ -22,7 +22,6 @@ export default function ShiftList() {
   const [renamingId, setRenamingId]     = useState(null)
   const [renameValue, setRenameValue]   = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const menuRef = useRef(null)
 
   // Load versions from Supabase on mount / storeId change
   useEffect(() => {
@@ -36,15 +35,6 @@ export default function ShiftList() {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [storeId])
-
-  // Close action menu on outside click
-  useEffect(() => {
-    const onClick = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenuId(null)
-    }
-    if (openMenuId) document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [openMenuId])
 
   const nextVerName = () => {
     const nums = versions
@@ -116,7 +106,7 @@ export default function ShiftList() {
         <div>
           <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{YEAR_MONTH}</div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', margin:0, letterSpacing:'-0.01em' }}>
-            シフト決定 — 時間帯人員配置
+            シフト管理
           </h1>
           <p style={{ fontSize:12, color:'#64748b', marginTop:6 }}>
             シフトのバージョンを作成・編集・確定できます。編集ボタンから配置画面に遷移します。
@@ -185,13 +175,21 @@ export default function ShiftList() {
                         style={{ width:'100%', padding:'5px 8px', border:'1px solid #4f46e5', borderRadius:6, fontSize:13, fontFamily:'inherit' }}
                       />
                     ) : (
-                      <span
-                        onClick={() => startRename(v)}
-                        title="クリックでリネーム"
-                        style={{ fontWeight:600, color:'#0f172a', cursor:'text', display:'inline-flex', alignItems:'center', gap:6 }}
-                      >
-                        {v.name}
-                        <span style={{ fontSize:10, color:'#cbd5e1' }}>✎</span>
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:8 }}>
+                        <span style={{ fontWeight:600, color:'#0f172a' }}>{v.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => startRename(v)}
+                          title="名前を変更"
+                          style={{
+                            display:'inline-flex', alignItems:'center', gap:4,
+                            padding:'2px 8px', borderRadius:4, fontSize:11, fontWeight:500,
+                            background:'#eef0fe', color:'#3730a3', border:'1px solid #c7d2fe',
+                            cursor:'pointer', fontFamily:'inherit',
+                          }}
+                        >
+                          ✎ リネーム
+                        </button>
                       </span>
                     )}
                   </td>
@@ -213,7 +211,8 @@ export default function ShiftList() {
                   {/* Action dropdown */}
                   <td style={{ padding:'12px 14px', textAlign:'center', borderBottom:B, position:'relative' }}>
                     <button
-                      onClick={() => setOpenMenuId(openMenuId === v.id ? null : v.id)}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === v.id ? null : v.id) }}
                       style={{
                         padding:'6px 12px', borderRadius:6, border:'1px solid #dde5f0',
                         background:'white', color:'#334155', fontSize:12, fontWeight:600,
@@ -223,27 +222,29 @@ export default function ShiftList() {
                       アクション <span style={{ fontSize:9, color:'#94a3b8' }}>▼</span>
                     </button>
                     {openMenuId === v.id && (
-                      <div
-                        ref={menuRef}
-                        style={{
-                          position:'absolute', top:'calc(100% + 2px)', right:14, zIndex:30,
-                          background:'white', border:B, borderRadius:8,
-                          boxShadow:'0 8px 24px rgba(15,23,42,0.12)', minWidth:160, overflow:'hidden',
-                        }}
-                      >
-                        <button onClick={handleCreate}
-                          style={menuItemStyle()}>
-                          <span style={{ marginRight:6 }}>＋</span>新規作成
-                        </button>
-                        <button onClick={() => handleConfirm(v.id)} disabled={v.status === 'confirmed'}
-                          style={menuItemStyle(v.status === 'confirmed')}>
-                          <span style={{ marginRight:6 }}>✓</span>シフトの確定
-                        </button>
-                        <button onClick={() => { setDeleteTarget(v); setOpenMenuId(null) }}
-                          style={{ ...menuItemStyle(), color:'#dc2626' }}>
-                          <span style={{ marginRight:6 }}>🗑</span>削除
-                        </button>
-                      </div>
+                      <>
+                        {/* 透明バックドロップ: 外側クリックで閉じる */}
+                        <div
+                          onClick={() => setOpenMenuId(null)}
+                          style={{ position:'fixed', inset:0, zIndex:29, background:'transparent' }}
+                        />
+                        <div
+                          style={{
+                            position:'absolute', top:'calc(100% + 2px)', right:14, zIndex:30,
+                            background:'white', border:B, borderRadius:8,
+                            boxShadow:'0 8px 24px rgba(15,23,42,0.12)', minWidth:160, overflow:'hidden',
+                          }}
+                        >
+                          <button type="button" onClick={(e) => { e.stopPropagation(); handleConfirm(v.id) }} disabled={v.status === 'confirmed'}
+                            style={menuItemStyle(v.status === 'confirmed')}>
+                            <span style={{ marginRight:6 }}>✓</span>シフトを確定
+                          </button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(v); setOpenMenuId(null) }}
+                            style={{ ...menuItemStyle(), color:'#dc2626' }}>
+                            <span style={{ marginRight:6 }}>🗑</span>削除
+                          </button>
+                        </div>
+                      </>
                     )}
                   </td>
 

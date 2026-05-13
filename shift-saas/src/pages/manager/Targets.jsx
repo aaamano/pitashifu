@@ -3,9 +3,18 @@ import { dailyTargets, YEAR_MONTH, storeConfig, calcRequiredStaff, ORDER_DISTRIB
 import { readWorkbookFromFile, extractSalesPatterns, matchPatternKey } from '../../utils/excelImport.js'
 import { useOrg } from '../../context/OrgContext'
 import { loadTargets, saveTargets } from '../../api/targets'
+import { loadSettings, saveSettings } from '../../api/orgSettings'
 
 const TARGET_YEAR  = 2026
 const TARGET_MONTH = 4
+
+// daysConfigベースの初期スケルトン（値ゼロ） — mockData の flash を防ぐ
+function makeSkeleton() {
+  return dailyTargets.map(d => ({
+    ...d,
+    sales: 0, customers: 0, avgSpend: 0, orders: 0, laborCost: 0,
+  }))
+}
 
 const PATTERN_HOURS = Array.from({ length: 14 }, (_, i) => i + 9) // 9-22
 
@@ -97,18 +106,24 @@ function initHourly(d) {
 export default function Targets() {
   const { stores } = useOrg()
   const storeId = stores[0]?.id
-  const [allTargets, setAllTargets] = useState(dailyTargets)
+  const [allTargets, setAllTargets] = useState(makeSkeleton)
   const [saving, setSaving] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
   useEffect(() => {
     if (!storeId) return
     let cancelled = false
-    loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH })
-      .then(dbRows => {
-        if (cancelled || dbRows.length === 0) return
-        const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
-        setAllTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
+    Promise.all([
+      loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH }),
+      loadSettings(storeId),
+    ])
+      .then(([dbRows, settings]) => {
+        if (cancelled) return
+        if (dbRows.length) {
+          const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
+          setAllTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
+        }
+        if (settings?.salesPatterns) setPatterns(settings.salesPatterns)
       })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
@@ -302,7 +317,11 @@ export default function Targets() {
     if (!storeId) { setErrMsg('店舗IDが取得できません'); return }
     setSaving(true); setErrMsg('')
     try {
+      // 1. 日別目標を保存
       await saveTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH, targets: allTargets })
+      // 2. 時間帯別売上パターンを settings JSONB にマージ保存
+      const existing = (await loadSettings(storeId)) || {}
+      await saveSettings(storeId, { ...existing, salesPatterns: patterns })
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e) {
       setErrMsg(e.message || '保存に失敗しました')
