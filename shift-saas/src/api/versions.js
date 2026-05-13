@@ -70,6 +70,30 @@ export async function updateVersion(id, patch) {
     .select('*, author:employees!shift_versions_author_id_fkey(name)')
     .single()
   if (error) throw error
+
+  // status='confirmed' に変更したら org全員に通知
+  if (patch.status === 'confirmed' && data.store_id) {
+    try {
+      // store_id から company の org_id を引く
+      const { data: store } = await supabase
+        .from('organizations')
+        .select('parent_id, name')
+        .eq('id', data.store_id)
+        .maybeSingle()
+      const orgId = store?.parent_id ?? data.store_id
+      await supabase.from('notifications').insert({
+        org_id:       orgId,
+        recipient_id: null,
+        type:         'confirmed',
+        title:        `シフトが確定しました: ${data.name}`,
+        body:         `${store?.name ?? ''} のシフトバージョン「${data.name}」が確定しました。`,
+        read:         false,
+      })
+    } catch (e) {
+      console.error('[versions.updateVersion.notify]', e)
+    }
+  }
+
   return toUi(data)
 }
 
