@@ -120,7 +120,7 @@ export default function PeriodRequests() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <button onClick={() => navigate(`/${orgId}/manager/shift`)}
           style={{ background: 'none', border: 'none', color: '#3730a3', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
-          ← シフト確定に戻る
+          ← シフト管理に戻る
         </button>
       </div>
 
