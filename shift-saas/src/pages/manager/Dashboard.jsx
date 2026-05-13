@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { staff, shiftData, daysConfig, dailyTargets, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ const actualSales = dailyTargets.slice(0, ACTUAL_DAYS).map(
 // ── component ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [view, setView] = useState('A')
+  const { orgId } = useParams()
+  const base = `/${orgId}/manager`
 
   return (
     <div className="mgr-page">
@@ -48,10 +50,10 @@ export default function Dashboard() {
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pita-text)', letterSpacing: '-0.01em' }}>{YEAR_MONTH} 前半 — ダッシュボード</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/pitashif/manager/targets" className="mgr-btn-secondary" style={{ textDecoration: 'none' }}>
+          <Link to={`${base}/targets`} className="mgr-btn-secondary" style={{ textDecoration: 'none' }}>
             目標設定 →
           </Link>
-          <Link to="/pitashif/manager/shift" className="mgr-btn-primary" style={{ textDecoration: 'none' }}>
+          <Link to={`${base}/shift`} className="mgr-btn-primary" style={{ textDecoration: 'none' }}>
             シフト決定 →
           </Link>
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { staff, skillLabels } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 
@@ -63,7 +64,9 @@ const Field = ({ label, value, onChange, multiline }) => (
   </div>
 )
 
-export default function Profile({ base = '/pitashif/employee', sukima = false }) {
+export default function Profile({ base: baseProp, sukima = false }) {
+  const { orgId } = useParams()
+  const base = baseProp ?? `/${orgId}/employee`
   const saved = loadProfile()
   const [profile, setProfile]   = useState(saved || DEFAULT)
   const [editing, setEditing]   = useState(false)

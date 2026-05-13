@@ -25,7 +25,8 @@ const InfoRow = ({ icon, label, value, accent }) => (
 )
 
 export default function SukimaDetail() {
-  const { id } = useParams()
+  const { id, orgId } = useParams()
+  const base = `/${orgId}/employee`
   const job = sukimaJobs.find(j => j.id === parseInt(id))
 
   const [applied,     setApplied]     = useState(false)
@@ -52,7 +53,7 @@ export default function SukimaDetail() {
       {/* Header */}
       <div className="pita-phone-header">
         <Link
-          to="/pitashif/employee-ver2/sukima"
+          to={`${base}/sukima`}
           style={{ fontSize:13, color:INDIGO, textDecoration:'none', fontWeight:600, padding:'4px 0', flexShrink:0 }}
         >
           ← 一覧
@@ -149,7 +150,7 @@ export default function SukimaDetail() {
         )}
       </div>
 
-      <EmployeeTabBar base="/pitashif/employee-ver2" sukima={true} />
+      <EmployeeTabBar sukima={true} />
 
       {/* Success toast */}
       {showSuccess && (

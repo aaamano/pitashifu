@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import { staff, daysConfig, YEAR_MONTH, shiftSubmissions as initialSubmissions } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { api } from '../../api/index.js'
@@ -45,7 +46,9 @@ function toCode(sh, eh) {
   return `${sh}-${eh}`
 }
 
-export default function ShiftSubmit({ base = '/pitashif/employee', sukima = false }) {
+export default function ShiftSubmit({ base: baseProp, sukima = false }) {
+  const { orgId } = useParams()
+  const base = baseProp ?? `/${orgId}/employee`
   const [submissions, setSubmissions] = useState(initialSubmissions)
   const [mode, setMode]               = useState('list')
 

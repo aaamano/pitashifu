@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useParams } from 'react-router-dom'
 import { YEAR_MONTH, allStores, managerNotifications } from '../data/mockData'
 import { LogoIcon } from './Logo'
 import {
@@ -7,14 +7,14 @@ import {
   IconPayroll, IconStore, IconBell,
 } from './Icons'
 
-const NAV = [
-  { to: '/pitashif/manager',               label: 'ダッシュボード', Icon: IconDashboard, end: true  },
-  { to: '/pitashif/manager/targets',       label: '目標計画',       Icon: IconTarget,    end: false },
-  { to: '/pitashif/manager/shift',         label: 'シフト決定',     Icon: IconShift,     end: false },
-  { to: '/pitashif/manager/members',       label: 'メンバー管理',   Icon: IconStaff,     end: false },
-  { to: '/pitashif/manager/payroll',       label: '月次振込予定',   Icon: IconPayroll,   end: false },
-  { to: '/pitashif/manager/settings',      label: '店舗設定',       Icon: IconStore,     end: false },
-  { to: '/pitashif/manager/notifications', label: '通知',           Icon: IconBell,      end: false, badge: true },
+const NAV_ITEMS = [
+  { suffix: '',               label: 'ダッシュボード', Icon: IconDashboard, end: true  },
+  { suffix: '/targets',       label: '目標計画',       Icon: IconTarget,    end: false },
+  { suffix: '/shift',         label: 'シフト決定',     Icon: IconShift,     end: false },
+  { suffix: '/members',       label: 'メンバー管理',   Icon: IconStaff,     end: false },
+  { suffix: '/payroll',       label: '月次振込予定',   Icon: IconPayroll,   end: false },
+  { suffix: '/settings',      label: '店舗設定',       Icon: IconStore,     end: false },
+  { suffix: '/notifications', label: '通知',           Icon: IconBell,      end: false, badge: true },
 ]
 
 const UNREAD = managerNotifications.filter(n => !n.read).length
@@ -33,6 +33,10 @@ const HamburgerIcon = () => (
 )
 
 export default function ManagerLayout() {
+  const { orgId } = useParams()
+  const base = `/${orgId}/manager`
+  const NAV = NAV_ITEMS.map(item => ({ ...item, to: base + item.suffix }))
+
   const [showDrop,    setShowDrop]    = useState(false)
   const [activeStore, setActiveStore] = useState(allStores[0])
   const [sidebarOpen, setSidebarOpen] = useState(false)

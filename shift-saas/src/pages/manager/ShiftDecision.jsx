@@ -88,7 +88,7 @@ const SUMM = [
 ]
 
 export default function ShiftDecision() {
-  const { versionId } = useParams()
+  const { versionId, orgId } = useParams()
   const navigate = useNavigate()
   const currentVersion = shiftVersions.find(v => v.id === versionId) || { id: versionId, name: versionId || 'ver1', status: 'draft', author: '金子 光男' }
   const [selectedDay,  setSelectedDay]  = useState(1)
@@ -516,7 +516,7 @@ export default function ShiftDecision() {
         <div>
           <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
             <button
-              onClick={() => navigate('/pitashif/manager/shift')}
+              onClick={() => navigate(`/${orgId}/manager/shift`)}
               style={{ background:'none', border:'none', color:'#6366f1', fontSize:11, fontWeight:600, cursor:'pointer', padding:0, fontFamily:'inherit' }}
             >
               ← バージョン一覧
