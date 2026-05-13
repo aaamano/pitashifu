@@ -14,14 +14,18 @@ const PENDING_BOOTSTRAP_KEY = 'pitashif_pending_bootstrap'
 // ログイン後にユーザーの org_id + role を引いて遷移先パスを決める
 // employees 行が無い場合: pendingBootstrap or メールから会社名を推定して bootstrap を実行
 async function resolveRedirectPath() {
-  // 1. employees 行を確認
-  let { data } = await supabase
-    .from('employees')
-    .select('org_id, role')
-    .maybeSingle()
-  if (data) {
-    const scope = data.role === 'staff' ? 'employee' : 'manager'
-    return `/${data.org_id}/${scope}`
+  // 1. 自分の employees 行を auth.uid() で確認
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user?.id) {
+    const { data } = await supabase
+      .from('employees')
+      .select('org_id, role')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+    if (data) {
+      const scope = data.role === 'staff' ? 'employee' : 'manager'
+      return `/${data.org_id}/${scope}`
+    }
   }
 
   // 2. 未bootstrap → pendingBootstrap or メールアドレスから会社名を生成して bootstrap
