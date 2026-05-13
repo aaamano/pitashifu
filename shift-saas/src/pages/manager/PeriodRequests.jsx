@@ -162,11 +162,12 @@ export default function PeriodRequests() {
             <thead>
               <tr>
                 <th className="name-col">スタッフ</th>
+                <th className="meta-col">種別</th>
                 <th className="meta-col">出勤日数</th>
                 {matrix.days.map(d => (
                   <th key={d.date}
                     className={d.dow === '土' ? 'pita-dow-sat' : d.dow === '日' ? 'pita-dow-sun' : ''}
-                    style={{ minWidth: 56 }}>
+                    style={{ minWidth: 60 }}>
                     {d.day}<br />{d.dow}
                   </th>
                 ))}
@@ -175,9 +176,18 @@ export default function PeriodRequests() {
             <tbody>
               {employees.map(emp => {
                 const summ = summary.get(emp.id) || { days: 0, hours: 0 }
+                const isFull = emp.employment_type === 'full_time'
                 return (
                   <tr key={emp.id}>
                     <td className="name-col" style={{ fontWeight: 600 }}>{emp.name}</td>
+                    <td className="meta-col">
+                      <span style={{
+                        fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                        background: isFull ? '#d1fae5' : '#f1f5f9',
+                        color:      isFull ? '#065f46' : '#475569',
+                        fontWeight: 600,
+                      }}>{isFull ? '正社員' : 'パート'}</span>
+                    </td>
                     <td className="meta-col" style={{ fontWeight: 600 }}>{summ.days}日 / {summ.hours.toFixed(1)}h</td>
                     {matrix.days.map(d => {
                       const cell = matrix.shifts?.[emp.id]?.[d.date]

@@ -319,7 +319,7 @@ export default function Dashboard() {
                       <th
                         key={d.day}
                         className={d.dow === '土' ? 'pita-dow-sat' : d.dow === '日' ? 'pita-dow-sun' : ''}
-                        style={{ minWidth: 52 }}
+                        style={{ minWidth: 60 }}
                       >
                         {d.day}<br />{d.dow}
                       </th>
