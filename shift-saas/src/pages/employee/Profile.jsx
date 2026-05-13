@@ -25,7 +25,7 @@ const DEFAULT = {
   phone: '090-1234-5678',
   email: 'kaneko@example.com',
   bank:  'みずほ銀行 新宿支店 普通 1234567',
-  emergency: '090-8765-4321（金子 光子）',
+  emergency: '090-0000-0000（緊急連絡先）',
 }
 
 const InfoRow = ({ label, value, accent }) => (

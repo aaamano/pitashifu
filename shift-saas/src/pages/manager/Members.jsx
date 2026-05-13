@@ -771,9 +771,9 @@ export default function Members() {
                       氏名 <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded ml-1 align-middle">必須</span>
                     </label>
                     <div className="grid grid-cols-2 gap-3">
-                      <input value={form.lastName}  onChange={e => setForm(p => ({ ...p, lastName:  e.target.value }))} placeholder="姓 (例: 天野)"
+                      <input value={form.lastName}  onChange={e => setForm(p => ({ ...p, lastName:  e.target.value }))} placeholder="姓 (例: 山田)"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-                      <input value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} placeholder="名 (例: 彰)"
+                      <input value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} placeholder="名 (例: 花子)"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
                     </div>
                   </div>
@@ -781,9 +781,9 @@ export default function Members() {
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">フリガナ</label>
                     <div className="grid grid-cols-2 gap-3">
-                      <input value={form.lastNameKana}  onChange={e => setForm(p => ({ ...p, lastNameKana:  e.target.value }))} placeholder="セイ (例: アマノ)"
+                      <input value={form.lastNameKana}  onChange={e => setForm(p => ({ ...p, lastNameKana:  e.target.value }))} placeholder="セイ (例: ヤマダ)"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
-                      <input value={form.firstNameKana} onChange={e => setForm(p => ({ ...p, firstNameKana: e.target.value }))} placeholder="メイ (例: アキラ)"
+                      <input value={form.firstNameKana} onChange={e => setForm(p => ({ ...p, firstNameKana: e.target.value }))} placeholder="メイ (例: ハナコ)"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
                     </div>
                   </div>
@@ -791,7 +791,7 @@ export default function Members() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">表示名</label>
-                      <input value={form.displayName} onChange={e => setForm(p => ({ ...p, displayName: e.target.value }))} placeholder="例: 天野彰1"
+                      <input value={form.displayName} onChange={e => setForm(p => ({ ...p, displayName: e.target.value }))} placeholder="例: 山田1"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
                     </div>
                     <div>
@@ -928,7 +928,7 @@ export default function Members() {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">ビル名等 <span className="text-[10px] text-gray-400 ml-1">最大20文字</span></label>
-                    <input value={form.buildingName} maxLength={20} onChange={e => setForm(p => ({ ...p, buildingName: e.target.value }))} placeholder="例: テスト1011"
+                    <input value={form.buildingName} maxLength={20} onChange={e => setForm(p => ({ ...p, buildingName: e.target.value }))} placeholder="例: ◯◯ビル 201号室"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400" />
                   </div>
                   <div>
