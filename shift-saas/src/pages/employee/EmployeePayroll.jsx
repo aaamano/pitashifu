@@ -1,10 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff, shiftData, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
+import { staff as mockStaff, shiftData as mockShiftData, daysConfig, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
+import { useOrg } from '../../context/OrgContext'
+import { useMe } from '../../hooks/useMe'
+import * as versionsApi from '../../api/versions'
+import * as shiftsApi from '../../api/shifts'
 
-const ME = staff[0]
-const MY_SHIFTS = shiftData[ME.id]
+function deriveDayCode(daySlots, empId) {
+  if (!daySlots) return 'X'
+  const hours = []
+  for (const [slot, ids] of Object.entries(daySlots)) {
+    if (Array.isArray(ids) && ids.includes(empId)) {
+      const h = parseInt(slot.split(':')[0], 10)
+      if (!Number.isNaN(h)) hours.push(h)
+    }
+  }
+  if (!hours.length) return 'X'
+  hours.sort((a, b) => a - b)
+  const s = hours[0], e = hours[hours.length - 1] + 1
+  if (s === 9 && e === 18) return 'F'
+  if (s === 9) return `O-${e}`
+  if (e === 22) return `${s}-L`
+  return `${s}-${e}`
+}
 
 const INDIGO  = '#4F46E5'
 const BORDER  = '#E2E8F0'
@@ -32,10 +51,7 @@ function fmtDuration(hours) {
   return `${h}h${String(m).padStart(2, '0')}m`
 }
 
-// Monthly totals
-const workDays  = MY_SHIFTS.filter(c => c && c !== 'X').length
-const workHours = MY_SHIFTS.reduce((s, c) => s + shiftHours(c), 0)
-const estPay    = workHours * ME.wage
+// Monthly totals は内部関数 (useMe/loadAssignments) のため、コンポーネント内で算出
 
 // Circular gauge (270° arc, gap at bottom)
 function GaugeArc({ value, max }) {
@@ -67,6 +83,32 @@ function GaugeArc({ value, max }) {
 export default function EmployeePayroll({ base: baseProp, sukima = false }) {
   const { orgId } = useParams()
   const base = baseProp ?? `/${orgId}/employee`
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id
+  const { me } = useMe()
+  const meDisp = me ?? mockStaff[0]
+
+  // 最新versionから自分のシフトを抽出
+  const [myShifts, setMyShifts] = useState(Array(30).fill('X'))
+  useEffect(() => {
+    if (!me || !storeId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const versions = await versionsApi.listVersions(storeId)
+        if (cancelled || !versions?.length) return
+        const target = versions.find(v => v.status === 'confirmed') || versions[0]
+        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
+        if (!cancelled) setMyShifts(daysConfig.map(d => deriveDayCode(assigned?.[d.day], me.id)))
+      } catch (e) { console.error('[EmployeePayroll.load]', e) }
+    })()
+    return () => { cancelled = true }
+  }, [me, storeId])
+  const myShiftsDisp = me ? myShifts : (mockShiftData[mockStaff[0].id] || [])
+  const workDays  = myShiftsDisp.filter(c => c && c !== 'X').length
+  const workHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
+  const estPay    = workHours * (meDisp.wage ?? 1050)
+
   const [activeTab,   setActiveTab]   = useState('month')
   const [goal,        setGoal]        = useState(loadGoal)
   const [editingGoal, setEditingGoal] = useState(false)

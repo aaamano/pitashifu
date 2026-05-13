@@ -23,12 +23,15 @@ const IconFile = ({ on }) => (
   </svg>
 )
 const IconYen = ({ on }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={on ? C : GRAY} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="2" x2="6"  y2="10"/>
-    <line x1="12" y1="2" x2="18" y2="10"/>
-    <line x1="5"  y1="13" x2="19" y2="13"/>
-    <line x1="5"  y1="17" x2="19" y2="17"/>
-    <line x1="12" y1="10" x2="12" y2="22"/>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <text
+      x="12" y="19"
+      textAnchor="middle"
+      fontSize="22"
+      fontWeight="700"
+      fill={on ? C : GRAY}
+      fontFamily="system-ui, -apple-system, sans-serif"
+    >¥</text>
   </svg>
 )
 const IconBolt = ({ on }) => (

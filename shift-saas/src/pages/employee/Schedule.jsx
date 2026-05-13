@@ -1,10 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff, daysConfig, YEAR_MONTH, shiftData } from '../../data/mockData'
+import { staff as mockStaff, daysConfig, YEAR_MONTH, shiftData as mockShiftData } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
+import { useOrg } from '../../context/OrgContext'
+import { supabase } from '../../lib/supabase'
+import * as versionsApi from '../../api/versions'
+import * as shiftsApi from '../../api/shifts'
 
-const ME = staff[0]
-const MY_SHIFTS = shiftData[ME.id]
+// assigned[day][slot]=[empId,...] → 当該日の連続スロット → コード
+function deriveDayCode(daySlots, empId) {
+  if (!daySlots) return 'X'
+  const hours = []
+  for (const [slot, ids] of Object.entries(daySlots)) {
+    if (Array.isArray(ids) && ids.includes(empId)) {
+      const h = parseInt(slot.split(':')[0], 10)
+      if (!Number.isNaN(h)) hours.push(h)
+    }
+  }
+  if (!hours.length) return 'X'
+  hours.sort((a, b) => a - b)
+  const s = hours[0], e = hours[hours.length - 1] + 1
+  if (s === 9 && e === 18) return 'F'
+  if (s === 9) return `O-${e}`
+  if (e === 22) return `${s}-L`
+  return `${s}-${e}`
+}
 
 const INDIGO = '#4F46E5'
 const CORAL  = '#FF6B6B'
@@ -47,15 +67,48 @@ function shiftHours(code) {
 }
 
 export default function Schedule({ base: baseProp, sukima = false }) {
-  const { orgId } = useParams()
-  const base = baseProp ?? `/${orgId}/employee`
+  const { orgId: paramOrg } = useParams()
+  const base = baseProp ?? `/${paramOrg}/employee`
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id
   const [selectedDay, setSelectedDay] = useState(TODAY_DAY)
 
-  const workDays  = MY_SHIFTS.filter(c => c && c !== 'X').length
-  const workHours = MY_SHIFTS.reduce((s, c) => s + shiftHours(c), 0)
-  const estPay    = workHours * ME.wage
+  // 現在のログインユーザー (employees行) と シフト配列を DB から読み込む
+  const [me, setMe] = useState(null)
+  const [myShifts, setMyShifts] = useState(Array(30).fill('X'))
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: meRow } = await supabase
+          .from('employees')
+          .select('*')
+          .maybeSingle()
+        if (cancelled) return
+        setMe(meRow)
+        if (!meRow || !storeId) return
+        // 最新version (確定優先) の assigned から自分のシフトを抽出
+        const versions = await versionsApi.listVersions(storeId)
+        if (cancelled || !versions?.length) return
+        const target = versions.find(v => v.status === 'confirmed') || versions[0]
+        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
+        if (cancelled) return
+        const codes = daysConfig.map(d => deriveDayCode(assigned?.[d.day], meRow.id))
+        setMyShifts(codes)
+      } catch (e) { console.error('[Schedule.load]', e) }
+    })()
+    return () => { cancelled = true }
+  }, [storeId])
 
-  const selCode  = MY_SHIFTS[selectedDay - 1]
+  // フォールバック: DBから取れていない時は mock を使う（開発時のみ）
+  const meDisp = me ?? mockStaff[0]
+  const myShiftsDisp = me ? myShifts : (mockShiftData[mockStaff[0].id] || [])
+
+  const workDays  = myShiftsDisp.filter(c => c && c !== 'X').length
+  const workHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
+  const estPay    = workHours * (meDisp.wage ?? 1050)
+
+  const selCode  = myShiftsDisp[selectedDay - 1]
   const selShift = parseCode(selCode)
   const selDow   = daysConfig[selectedDay - 1]?.dow
 
@@ -103,7 +156,7 @@ export default function Schedule({ base: baseProp, sukima = false }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
               {calCells.map((day, idx) => {
                 if (!day) return <div key={`e${idx}`} style={{ aspectRatio: '1', borderRight: idx % 7 < 6 ? `1px solid ${BORDER}` : 'none', borderBottom: `1px solid ${BORDER}` }} />
-                const code    = MY_SHIFTS[day - 1]
+                const code    = myShiftsDisp[day - 1]
                 const shift   = parseCode(code)
                 const isToday = day === TODAY_DAY
                 const isSel   = day === selectedDay
@@ -189,8 +242,8 @@ export default function Schedule({ base: baseProp, sukima = false }) {
                 <div style={{ display: 'flex', gap: 8 }}>
                   {[
                     { l: '勤務時間', v: `${selShift.end - selShift.start}時間` },
-                    { l: '想定報酬', v: `¥${((selShift.end - selShift.start - 1) * ME.wage).toLocaleString()}` },
-                    { l: '時給',     v: `¥${ME.wage.toLocaleString()}` },
+                    { l: '想定報酬', v: `¥${((selShift.end - selShift.start - 1) * (meDisp.wage ?? 1050)).toLocaleString()}` },
+                    { l: '時給',     v: `¥${(meDisp.wage ?? 1050).toLocaleString()}` },
                   ].map(({ l, v }) => (
                     <div key={l} style={{ flex: 1, background: '#F8FAFC', borderRadius: 8, padding: '7px 8px' }}>
                       <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 2 }}>{l}</div>

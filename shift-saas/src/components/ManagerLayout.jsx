@@ -4,13 +4,14 @@ import { YEAR_MONTH, allStores, managerNotifications } from '../data/mockData'
 import { LogoIcon } from './Logo'
 import {
   IconDashboard, IconTarget, IconShift, IconStaff,
-  IconPayroll, IconStore, IconBell, IconImport,
+  IconPayroll, IconStore, IconBell, IconImport, IconChat,
 } from './Icons'
 
 const NAV_ITEMS = [
   { suffix: '',               label: 'ダッシュボード', Icon: IconDashboard, end: true  },
   { suffix: '/targets',       label: '目標計画',       Icon: IconTarget,    end: false },
   { suffix: '/shift',         label: 'シフト管理',     Icon: IconShift,     end: false },
+  { suffix: '/requests',      label: 'シフト希望提出', Icon: IconChat,      end: false },
   { suffix: '/members',       label: 'スタッフ管理',   Icon: IconStaff,     end: false },
   { suffix: '/import',        label: 'インポート',     Icon: IconImport,    end: false },
   { suffix: '/payroll',       label: '支出管理',       Icon: IconPayroll,   end: false },
