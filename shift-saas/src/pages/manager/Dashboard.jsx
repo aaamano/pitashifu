@@ -1,11 +1,34 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff, shiftData, daysConfig, dailyTargets as mockDailyTargets, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
+import { staff as mockStaff, shiftData as mockShiftData, daysConfig, dailyTargets as mockDailyTargets, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadTargets } from '../../api/targets'
+import * as employeesApi from '../../api/employees'
+import * as versionsApi from '../../api/versions'
+import * as shiftsApi from '../../api/shifts'
 
 const TARGET_YEAR  = 2026
 const TARGET_MONTH = 4
+
+// assigned[day][slot]=[empId,...] と empId から、その日の連続スロットを
+// シフトコード ('F' / '9-18' / '13-L' / 'O-16' / 'X') に変換
+function deriveDayCode(daySlots, empId) {
+  if (!daySlots) return 'X'
+  const hours = []
+  for (const [slot, ids] of Object.entries(daySlots)) {
+    if (Array.isArray(ids) && ids.includes(empId)) {
+      const h = parseInt(slot.split(':')[0], 10)
+      if (!Number.isNaN(h)) hours.push(h)
+    }
+  }
+  if (!hours.length) return 'X'
+  hours.sort((a, b) => a - b)
+  const s = hours[0], e = hours[hours.length - 1] + 1
+  if (s === 9 && e === 18) return 'F'
+  if (s === 9) return `O-${e}`
+  if (e === 22) return `${s}-L`
+  return `${s}-${e}`
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function parseShiftTimes(code) {
@@ -37,6 +60,43 @@ export default function Dashboard() {
   const { stores } = useOrg()
   const storeId = stores[0]?.id
   const base = `/${orgId}/manager`
+
+  // DB社員 & 最新version の assigned をロード
+  const [dbEmployees, setDbEmployees] = useState([])
+  const [dbAssigned,  setDbAssigned]  = useState({})
+
+  useEffect(() => {
+    if (!orgId || !storeId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const emps = await employeesApi.listEmployees(orgId)
+        if (cancelled) return
+        setDbEmployees(emps)
+        // 最新の shift_version → assignments を取得
+        const versions = await versionsApi.listVersions(storeId)
+        if (cancelled || !versions?.length) return
+        // 確定があればそれを優先、無ければ最新作成
+        const target = versions.find(v => v.status === 'confirmed') || versions[0]
+        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
+        if (!cancelled) setDbAssigned(assigned ?? {})
+      } catch (e) {
+        console.error('[Dashboard.loadEmployeesShifts]', e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [orgId, storeId])
+
+  // staff / shiftData を派生 (DBがあればDB優先、なければモック)
+  const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
+  const shiftData = useMemo(() => {
+    if (!dbEmployees.length) return mockShiftData
+    const out = {}
+    for (const emp of dbEmployees) {
+      out[emp.id] = daysConfig.map(d => deriveDayCode(dbAssigned?.[d.day], emp.id))
+    }
+    return out
+  }, [dbEmployees, dbAssigned])
 
   // mockData の flash を防ぐためスケルトン（値ゼロ）で初期化
   const skeleton = useMemo(() => mockDailyTargets.map(d => ({

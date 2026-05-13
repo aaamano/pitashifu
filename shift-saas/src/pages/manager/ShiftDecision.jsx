@@ -57,7 +57,7 @@ function getTasksForSlotMin(slotMin, tasks) {
 const LATE_THRESHOLD  = 21  // 前日この時刻以降終了 = 遅番
 const EARLY_THRESHOLD = 9   // 当日この時刻以前開始 = 早番
 
-function runAIForDays(days, slots, staffList, constraints, targets, specialTasks) {
+function runAIForDays(days, slots, staffList, constraints, targets, specialTasks, shiftData) {
   const result = {}
   let avoidedConflicts = 0
   for (const day of days) {
@@ -563,21 +563,27 @@ export default function ShiftDecision() {
   const openAI = () => { setAIDays(new Set(daysConfig.map(d => d.day))); setAIResult(null); setAIPhase('select'); setShowAI(true) }
   const runAI = async () => {
     setAIPhase('loading'); setAIStage(0)
-    for (let i = 0; i < AI_STAGES.length; i++) { setAIStage(i); await new Promise(r => setTimeout(r, 700)) }
-    const days = [...aiDays].sort((a, b) => a - b)
-    const { result, avoidedConflicts, staffWithTargets, totalAssigned } = runAIForDays(days, slots, staff, staffConstraints, dailyTargets, specialTasks)
-    const merged = { ...assigned, ...result }
-    setAssigned(merged)
-    setAIResult({ days, avoidedConflicts, staffWithTargets, totalAssigned })
-    setAIPhase('done')
-    // AI配置結果を自動でDBに保存
-    if (storeIdForSave && versionId) {
-      try {
-        await shiftsApi.saveAssignments({ versionId, storeId: storeIdForSave, assignedByDay: merged })
-      } catch (e) {
-        console.error('[ShiftDecision.runAI.autoSave]', e)
-        setSaveError('AI配置の自動保存に失敗: ' + (e.message || e))
+    try {
+      for (let i = 0; i < AI_STAGES.length; i++) { setAIStage(i); await new Promise(r => setTimeout(r, 700)) }
+      const days = [...aiDays].sort((a, b) => a - b)
+      const { result, avoidedConflicts, staffWithTargets, totalAssigned } = runAIForDays(days, slots, staff, staffConstraints, dailyTargets, specialTasks, shiftData)
+      const merged = { ...assigned, ...result }
+      setAssigned(merged)
+      setAIResult({ days, avoidedConflicts, staffWithTargets, totalAssigned })
+      setAIPhase('done')
+      // AI配置結果を自動でDBに保存
+      if (storeIdForSave && versionId) {
+        try {
+          await shiftsApi.saveAssignments({ versionId, storeId: storeIdForSave, assignedByDay: merged })
+        } catch (e) {
+          console.error('[ShiftDecision.runAI.autoSave]', e)
+          setSaveError('AI配置の自動保存に失敗: ' + (e.message || e))
+        }
       }
+    } catch (e) {
+      console.error('[ShiftDecision.runAI]', e)
+      setSaveError('AI実行エラー: ' + (e.message || e))
+      setAIPhase('select') // ローディングを抜けてやり直し可能に
     }
   }
   const toggleAIDay = (day) => setAIDays(prev => { const n = new Set(prev); n.has(day) ? n.delete(day) : n.add(day); return n })

@@ -463,7 +463,7 @@ export default function Members() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexWrap:'wrap', gap:10 }}>
         <div>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{YEAR_MONTH} 前半</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>メンバー管理</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>スタッフ管理</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
@@ -658,7 +658,7 @@ export default function Members() {
           <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
             <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div>
-                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>メンバー CSV / Excel アップロード</div>
+                <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>スタッフ CSV / Excel アップロード</div>
                 <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>スタッフのマスターデータをCSV / Excel で一括更新します</div>
               </div>
               <button onClick={() => setShowCsvModal(false)} style={{ fontSize:20, lineHeight:1, background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}>×</button>
@@ -746,7 +746,7 @@ export default function Members() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl my-4">
             <div className="px-6 py-4 border-b flex items-center justify-between">
-              <h2 className="font-bold text-lg text-gray-900">{form.id ? 'メンバー編集' : '新規メンバー追加'}</h2>
+              <h2 className="font-bold text-lg text-gray-900">{form.id ? 'スタッフ編集' : 'スタッフ追加'}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
 
