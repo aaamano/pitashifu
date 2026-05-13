@@ -21,7 +21,6 @@ function rowToUi(row, dayOfMonth) {
 export async function loadTargets({ storeId, year, month }) {
   if (!storeId) return []
   const from = toDate(year, month, 1)
-  // 翌月の1日 - 1秒
   const nextMonth = month === 12 ? 1 : month + 1
   const nextYear  = month === 12 ? year + 1 : year
   const to = toDate(nextYear, nextMonth, 1)
@@ -31,14 +30,12 @@ export async function loadTargets({ storeId, year, month }) {
     .eq('store_id', storeId)
     .gte('date', from)
     .lt('date', to)
-  if (error) throw error
-  // date → day-of-month
+  if (error) { console.error('[targets.loadTargets]', error); throw error }
   return (data ?? []).map(r => rowToUi(r, parseInt(r.date.slice(8, 10), 10)))
 }
 
 export async function saveTargets({ storeId, year, month, targets }) {
   if (!storeId) throw new Error('storeId is required')
-  // upsert by (store_id, date)
   const rows = targets.map(t => ({
     store_id:          storeId,
     date:              toDate(year, month, t.day),
@@ -49,8 +46,10 @@ export async function saveTargets({ storeId, year, month, targets }) {
     labor_cost_target: Math.round(t.laborCost || 0),
     sales_pattern:     t.salesPattern ?? 'weekday1',
   }))
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('daily_targets')
     .upsert(rows, { onConflict: 'store_id,date' })
-  if (error) throw error
+    .select()
+  if (error) { console.error('[targets.saveTargets]', error, 'rows=', rows); throw error }
+  return data
 }

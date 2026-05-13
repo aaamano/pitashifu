@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff, shiftData, daysConfig, dailyTargets, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
+import { staff, shiftData, daysConfig, dailyTargets as mockDailyTargets, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
+import { useOrg } from '../../context/OrgContext'
+import { loadTargets } from '../../api/targets'
+
+const TARGET_YEAR  = 2026
+const TARGET_MONTH = 4
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function parseShiftTimes(code) {
@@ -23,22 +28,38 @@ function getBarProps(code) {
   return { type: t.end >= 22 ? 'closer' : 'normal', left, width }
 }
 
-// ── module-level constants ────────────────────────────────────────────────────
-const totalMonth  = dailyTargets.reduce((s, d) => s + d.sales, 0)
-const totalCust   = dailyTargets.reduce((s, d) => s + d.customers, 0)
-const totalOrders = dailyTargets.reduce((s, d) => s + d.orders, 0)
-const avgUnit     = Math.round(dailyTargets.reduce((s, d) => s + d.avgSpend, 0) / dailyTargets.length)
 const ACTUAL_DAYS = 5
-// Simulated actuals for first 5 days (90-110% of target)
-const actualSales = dailyTargets.slice(0, ACTUAL_DAYS).map(
-  (d, i) => Math.round(d.sales * [1.02, 0.95, 1.08, 0.97, 1.05][i])
-)
 
 // ── component ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [view, setView] = useState('A')
   const { orgId } = useParams()
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id
   const base = `/${orgId}/manager`
+
+  // dailyTargets を DB から動的に読み込む（DBにあればその値、無ければmockData）
+  const [dailyTargets, setDailyTargets] = useState(mockDailyTargets)
+  useEffect(() => {
+    if (!storeId) return
+    let cancelled = false
+    loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH })
+      .then(dbRows => {
+        if (cancelled || dbRows.length === 0) return
+        const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
+        setDailyTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
+      })
+      .catch(e => console.error('[Dashboard.loadTargets]', e))
+    return () => { cancelled = true }
+  }, [storeId])
+
+  const totalMonth  = useMemo(() => dailyTargets.reduce((s, d) => s + d.sales, 0), [dailyTargets])
+  const totalCust   = useMemo(() => dailyTargets.reduce((s, d) => s + d.customers, 0), [dailyTargets])
+  const totalOrders = useMemo(() => dailyTargets.reduce((s, d) => s + d.orders, 0), [dailyTargets])
+  const avgUnit     = useMemo(() => Math.round(dailyTargets.reduce((s, d) => s + d.avgSpend, 0) / Math.max(1, dailyTargets.length)), [dailyTargets])
+  const actualSales = useMemo(() => dailyTargets.slice(0, ACTUAL_DAYS).map(
+    (d, i) => Math.round(d.sales * [1.02, 0.95, 1.08, 0.97, 1.05][i])
+  ), [dailyTargets])
 
   return (
     <div className="mgr-page">
