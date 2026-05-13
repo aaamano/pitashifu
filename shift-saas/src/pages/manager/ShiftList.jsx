@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { shiftVersions as initialVersions, YEAR_MONTH } from '../../data/mockData'
-import { api } from '../../api/index.js'
+import { YEAR_MONTH } from '../../data/mockData'
+import { useOrg } from '../../context/OrgContext'
+import * as versionsApi from '../../api/versions'
 
 const STATUS_LABEL = { draft: '下書き', confirmed: '確定済み' }
 const STATUS_STYLE = {
@@ -9,28 +10,32 @@ const STATUS_STYLE = {
   confirmed: { background: '#d1fae5', color: '#065f46' },
 }
 
-function nowStamp() {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 export default function ShiftList() {
   const navigate = useNavigate()
   const { orgId } = useParams()
-  const [versions, setVersions]         = useState(initialVersions)
+  const { stores } = useOrg()
+  const storeId = stores[0]?.id // 会社配下の最初の店舗（後でセレクタ連動予定）
+  const [versions, setVersions]         = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [errMsg, setErrMsg]             = useState('')
   const [openMenuId, setOpenMenuId]     = useState(null)
   const [renamingId, setRenamingId]     = useState(null)
   const [renameValue, setRenameValue]   = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const menuRef = useRef(null)
 
-  // Load versions from DB on mount
+  // Load versions from Supabase on mount / storeId change
   useEffect(() => {
-    api.getVersions()
-      .then(data => setVersions(data))
-      .catch(() => {}) // keep initialVersions on API error
-  }, [])
+    if (!storeId) return
+    let cancelled = false
+    setLoading(true)
+    setErrMsg('')
+    versionsApi.listVersions(storeId)
+      .then(data => { if (!cancelled) setVersions(data) })
+      .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [storeId])
 
   // Close action menu on outside click
   useEffect(() => {
@@ -51,26 +56,35 @@ export default function ShiftList() {
   }
 
   const handleCreate = async () => {
-    const id = `v${Date.now()}`
-    const ts = nowStamp()
-    const v  = { id, name: nextVerName(), status: 'draft', createdAt: ts, updatedAt: ts, author: '金子 光男' }
-    setVersions(prev => [v, ...prev])
+    if (!storeId) return
     setOpenMenuId(null)
-    api.createVersion(v).catch(() => {})
+    try {
+      const created = await versionsApi.createVersion({ storeId, name: nextVerName() })
+      setVersions(prev => [created, ...prev])
+    } catch (e) {
+      setErrMsg(e.message || '作成に失敗しました')
+    }
   }
 
   const handleConfirm = async (id) => {
-    const ts = nowStamp()
-    setVersions(prev => prev.map(v => v.id === id ? { ...v, status: 'confirmed', updatedAt: ts } : v))
     setOpenMenuId(null)
-    api.updateVersion(id, { status: 'confirmed', updatedAt: ts }).catch(() => {})
+    try {
+      const updated = await versionsApi.updateVersion(id, { status: 'confirmed' })
+      setVersions(prev => prev.map(v => v.id === id ? updated : v))
+    } catch (e) {
+      setErrMsg(e.message || '確定に失敗しました')
+    }
   }
 
   const handleDelete = async (id) => {
-    setVersions(prev => prev.filter(v => v.id !== id))
     setDeleteTarget(null)
     setOpenMenuId(null)
-    api.deleteVersion(id).catch(() => {})
+    try {
+      await versionsApi.deleteVersion(id)
+      setVersions(prev => prev.filter(v => v.id !== id))
+    } catch (e) {
+      setErrMsg(e.message || '削除に失敗しました')
+    }
   }
 
   const startRename = (v) => {
@@ -78,15 +92,18 @@ export default function ShiftList() {
     setRenameValue(v.name)
   }
   const commitRename = async () => {
-    if (!renamingId) return
+    if (!renamingId) { return }
     const trimmed = renameValue.trim()
-    if (trimmed) {
-      const ts = nowStamp()
-      setVersions(prev => prev.map(v => v.id === renamingId ? { ...v, name: trimmed, updatedAt: ts } : v))
-      api.updateVersion(renamingId, { name: trimmed, updatedAt: ts }).catch(() => {})
-    }
+    const id = renamingId
     setRenamingId(null)
     setRenameValue('')
+    if (!trimmed) return
+    try {
+      const updated = await versionsApi.updateVersion(id, { name: trimmed })
+      setVersions(prev => prev.map(v => v.id === id ? updated : v))
+    } catch (e) {
+      setErrMsg(e.message || 'リネームに失敗しました')
+    }
   }
 
   const B = '1px solid #dde5f0'
@@ -107,15 +124,22 @@ export default function ShiftList() {
         </div>
         <button
           onClick={handleCreate}
+          disabled={!storeId}
           style={{
             display:'flex', alignItems:'center', gap:6, padding:'9px 16px', borderRadius:8,
-            border:'none', background:'#4f46e5', color:'white', fontSize:13, fontWeight:600,
-            cursor:'pointer', fontFamily:'inherit',
+            border:'none', background: storeId ? '#4f46e5' : '#c7d2fe', color:'white', fontSize:13, fontWeight:600,
+            cursor: storeId ? 'pointer' : 'not-allowed', fontFamily:'inherit',
           }}
         >
           ＋ 新規バージョン作成
         </button>
       </div>
+
+      {errMsg && (
+        <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+          {errMsg}
+        </div>
+      )}
 
       {/* ── Versions table ── */}
       <div style={{ background:'white', borderRadius:12, border:B, overflow:'visible' }}>
@@ -133,7 +157,14 @@ export default function ShiftList() {
               </tr>
             </thead>
             <tbody>
-              {versions.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={7} style={{ padding:'48px 16px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>
+                    読み込み中…
+                  </td>
+                </tr>
+              )}
+              {!loading && versions.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ padding:'48px 16px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>
                     シフトバージョンがありません。「＋ 新規バージョン作成」から作成してください。
