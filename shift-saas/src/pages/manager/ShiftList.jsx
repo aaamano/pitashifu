@@ -4,6 +4,7 @@ import { useOrg } from '../../context/OrgContext'
 import * as versionsApi from '../../api/versions'
 import { listAllSubmissions, findOrCreatePeriod } from '../../api/shiftRequests'
 import * as employeesApi from '../../api/employees'
+import { createNotification } from '../../api/notifications'
 
 const PER_PAGE = 12
 
@@ -66,6 +67,10 @@ export default function ShiftList() {
   const [openMode,    setOpenMode]    = useState(null)  // 'requests' | 'decide' | 'confirmed' | null
   const [page,        setPage]        = useState(0)
   const [creating,    setCreating]    = useState(false)
+  const [showPublish, setShowPublish] = useState(false)
+  const [publishPeriod, setPublishPeriod] = useState('')
+  const [publishing,  setPublishing]  = useState(false)
+  const [publishMsg,  setPublishMsg]  = useState('')
 
   useEffect(() => {
     if (!storeId || !orgId) return
@@ -144,6 +149,47 @@ export default function ShiftList() {
     }
   }
 
+  // 確定済みバージョンが存在する期間の一覧（通達対象）
+  const confirmedPeriodNames = useMemo(() => {
+    const names = new Set()
+    for (const v of versions) {
+      if (v.status === 'confirmed' && v.name) {
+        // 「2026年5月 前半 ver1」 → 「2026年5月 前半」
+        const m = v.name.match(/(\d{4}年\d{1,2}月\s*(前半|後半))/)
+        if (m) names.add(m[1])
+      }
+    }
+    return [...names].sort((a, b) => sortKey(b) - sortKey(a))
+  }, [versions])
+
+  // 通達ポップアップを開く時、デフォルト選択
+  const openPublishModal = () => {
+    setPublishMsg('')
+    setPublishPeriod(confirmedPeriodNames[0] ?? '')
+    setShowPublish(true)
+  }
+
+  const handlePublish = async () => {
+    if (!publishPeriod || !orgId) return
+    setPublishing(true); setPublishMsg('')
+    try {
+      await createNotification({
+        orgId,
+        recipientId: null,
+        type: 'confirmed',
+        title: `${publishPeriod} の確定シフトが発表されました`,
+        body:  `${publishPeriod} のシフトが確定しました。アプリのシフト画面からご確認ください。`,
+      })
+      setPublishMsg('通知を送信しました')
+      setTimeout(() => setShowPublish(false), 900)
+    } catch (e) {
+      console.error('[ShiftList.publish]', e)
+      setPublishMsg(e.message || '通知の送信に失敗しました')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   // 「シフト希望一覧」ボタン: 該当periodをDBに find-or-create して新URLへ遷移
   const handleOpenRequests = async (periodName) => {
     if (!storeId) return
@@ -158,11 +204,25 @@ export default function ShiftList() {
 
   return (
     <div className="mgr-page">
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>シフト確定</h1>
-        <p style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-          半月ごとにシフト希望の確認・シフト確定作業ができます。
-        </p>
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>シフト管理</h1>
+          <p style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+            半月ごとにシフト希望の確認・シフト確定作業ができます。
+          </p>
+        </div>
+        <button onClick={openPublishModal}
+          disabled={confirmedPeriodNames.length === 0}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 14px', borderRadius: 8, border: 'none',
+            background: confirmedPeriodNames.length === 0 ? '#fcd34d' : '#f59e0b',
+            color: 'white', fontSize: 12, fontWeight: 600,
+            cursor: confirmedPeriodNames.length === 0 ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit', opacity: confirmedPeriodNames.length === 0 ? 0.7 : 1,
+          }}
+          title={confirmedPeriodNames.length === 0 ? '確定済みのシフトがありません' : ''}
+        >📢 確定シフト通達</button>
       </div>
 
       {errMsg && (
@@ -236,6 +296,47 @@ export default function ShiftList() {
           ))}
           <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1}
             style={pagerBtnStyle(page === totalPages - 1)}>次のページ ›</button>
+        </div>
+      )}
+
+      {/* ── 確定シフト通達 Modal ── */}
+      {showPublish && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+          onClick={() => !publishing && setShowPublish(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background:'white', borderRadius:16, width:'100%', maxWidth:440, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #e2e8f0' }}>
+              <div style={{ fontSize:17, fontWeight:700, color:'#0f172a' }}>📢 確定シフト通達</div>
+              <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>確定したシフトをスタッフへ通知します</div>
+            </div>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:'#475569', display:'block', marginBottom:8 }}>通達するシフト期間</label>
+                <select value={publishPeriod} onChange={e => setPublishPeriod(e.target.value)}
+                  style={{ padding:'8px 12px', borderRadius:8, border:'1px solid #dde5f0', fontSize:13, color:'#0f172a', fontFamily:'inherit', outline:'none', width:'100%' }}>
+                  {confirmedPeriodNames.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize:12, fontWeight:600, color:'#475569', display:'block', marginBottom:6 }}>通知プレビュー</label>
+                <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'12px 14px', fontSize:12, color:'#334155', lineHeight:1.7 }}>
+                  【確定シフトのお知らせ】<br/>
+                  {publishPeriod} のシフトが確定しました。<br/>
+                  アプリのシフト画面からご確認ください。
+                </div>
+              </div>
+              {publishMsg && (
+                <div style={{ fontSize:12, color: publishMsg.includes('失敗') ? '#dc2626' : '#059669', fontWeight:600 }}>{publishMsg}</div>
+              )}
+            </div>
+            <div style={{ padding:'12px 24px 20px', display:'flex', gap:10 }}>
+              <button onClick={() => setShowPublish(false)} disabled={publishing}
+                style={{ flex:1, padding:'10px 0', borderRadius:8, border:'1px solid #dde5f0', background:'white', color:'#475569', fontSize:13, fontWeight:600, cursor: publishing ? 'not-allowed' : 'pointer', fontFamily:'inherit' }}>キャンセル</button>
+              <button onClick={handlePublish} disabled={publishing || !publishPeriod}
+                style={{ flex:1, padding:'10px 0', borderRadius:8, border:'none', background:'#f59e0b', color:'white', fontSize:13, fontWeight:700, cursor: publishing ? 'not-allowed' : 'pointer', fontFamily:'inherit', opacity: publishing ? 0.7 : 1 }}>
+                {publishing ? '送信中…' : '通知を送る'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
