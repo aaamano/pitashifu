@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { LogoIcon } from '../../components/Logo'
 import { useAuth } from '../../context/AuthContext'
+import { isSupabaseConfigured } from '../../lib/supabase'
 
 const BRAND = '#4F46E5'
 const BRAND_DEEP = '#3730A3'
@@ -45,6 +46,12 @@ export default function Login() {
         </div>
 
         <h1 style={styles.title}>ログイン</h1>
+
+        {!isSupabaseConfigured && (
+          <div style={styles.warn}>
+            ⚠ Supabase の環境変数（<code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code>）が未設定です。Vercel の Settings → Environment Variables から設定してください。
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:14 }}>
           <label style={styles.label}>
@@ -156,6 +163,16 @@ const styles = {
     borderRadius: 8,
     padding: '8px 12px',
     fontSize: 12,
+  },
+  warn: {
+    background: '#FEF3C7',
+    color: '#92400E',
+    border: '1px solid #FDE68A',
+    borderRadius: 8,
+    padding: '10px 12px',
+    fontSize: 12,
+    marginBottom: 14,
+    lineHeight: 1.6,
   },
   footer: {
     marginTop: 22,
