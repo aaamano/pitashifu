@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { managerNotifications } from '../../data/mockData'
+import { useOrg } from '../../context/OrgContext'
 import * as notificationsApi from '../../api/notifications'
 
 const TYPE_CONFIG = {
@@ -10,7 +11,12 @@ const TYPE_CONFIG = {
 }
 
 export default function ManagerNotifications() {
+  const { orgId } = useOrg()
   const [items, setItems] = useState(managerNotifications)
+  const [showCompose, setShowCompose] = useState(false)
+  const [composeForm, setComposeForm] = useState({ type: 'info', title: '', body: '' })
+  const [errMsg, setErrMsg] = useState('')
+  const [sending, setSending] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -31,22 +37,91 @@ export default function ManagerNotifications() {
   }
   const unread = items.filter(n => !n.read).length
 
+  const sendNotification = async () => {
+    if (!orgId) { setErrMsg('orgIdが取得できません'); return }
+    if (!composeForm.title.trim() || !composeForm.body.trim()) {
+      setErrMsg('タイトルと本文を入力してください')
+      return
+    }
+    setSending(true); setErrMsg('')
+    try {
+      const created = await notificationsApi.createNotification({
+        orgId,
+        recipientId: null, // null = org全員宛
+        type:        composeForm.type,
+        title:       composeForm.title,
+        body:        composeForm.body,
+      })
+      setItems(prev => [created, ...prev])
+      setShowCompose(false)
+      setComposeForm({ type: 'info', title: '', body: '' })
+    } catch (e) {
+      setErrMsg(e.message || '送信に失敗しました')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="mgr-page">
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24 }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:10 }}>
         <div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>通知</h1>
           <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>
             {unread > 0 ? `未読 ${unread}件` : 'すべて既読です'}
           </p>
         </div>
-        {unread > 0 && (
-          <button onClick={markAllRead} className="mgr-btn-secondary" style={{ fontSize:12 }}>
-            すべて既読にする
+        <div style={{ display:'flex', gap:8 }}>
+          {unread > 0 && (
+            <button onClick={markAllRead} className="mgr-btn-secondary" style={{ fontSize:12 }}>
+              すべて既読にする
+            </button>
+          )}
+          <button onClick={() => setShowCompose(true)} className="mgr-btn-primary" style={{ fontSize:12 }}>
+            ＋ 通知を作成
           </button>
-        )}
+        </div>
       </div>
+
+      {errMsg && (
+        <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+          {errMsg}
+        </div>
+      )}
+
+      {showCompose && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }} onClick={() => setShowCompose(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background:'white', borderRadius:12, padding:24, width:'min(480px,92vw)', boxShadow:'0 20px 50px rgba(15,23,42,0.25)' }}>
+            <div style={{ fontSize:16, fontWeight:700, color:'#0f172a', marginBottom:16 }}>通知を作成（org全員宛）</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div>
+                <label className="mgr-label">種別</label>
+                <select value={composeForm.type} onChange={e => setComposeForm(p => ({ ...p, type: e.target.value }))} className="mgr-input">
+                  <option value="info">お知らせ (info)</option>
+                  <option value="reminder">リマインダー (reminder)</option>
+                  <option value="alert">アラート (alert)</option>
+                  <option value="warning">警告 (warning)</option>
+                  <option value="submit">提出関連 (submit)</option>
+                  <option value="confirmed">確定通知 (confirmed)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mgr-label">タイトル</label>
+                <input className="mgr-input" value={composeForm.title} onChange={e => setComposeForm(p => ({ ...p, title: e.target.value }))} placeholder="例: 5月前半シフトを確定しました" />
+              </div>
+              <div>
+                <label className="mgr-label">本文</label>
+                <textarea className="mgr-input" rows={3} value={composeForm.body} onChange={e => setComposeForm(p => ({ ...p, body: e.target.value }))} placeholder="例: 5月1〜15日のシフトを確定しました。アプリでご確認ください。" />
+              </div>
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
+              <button onClick={() => setShowCompose(false)} className="mgr-btn-secondary">キャンセル</button>
+              <button onClick={sendNotification} disabled={sending} className="mgr-btn-primary">{sending ? '送信中…' : '送信する'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Notification list */}
       <div className="mgr-card">

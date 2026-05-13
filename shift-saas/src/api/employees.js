@@ -56,28 +56,30 @@ export async function listEmployees(orgId) {
     .select('*')
     .eq('org_id', orgId)
     .order('created_at', { ascending: true })
-  if (error) throw error
+  if (error) { console.error('[employees.list]', error); throw error }
   return (data ?? []).map(toUi)
 }
 
 export async function createEmployee({ orgId, ui }) {
+  const payload = toDb(ui, orgId)
   const { data, error } = await supabase
     .from('employees')
-    .insert(toDb(ui, orgId))
+    .insert(payload)
     .select()
     .single()
-  if (error) throw error
+  if (error) { console.error('[employees.create]', error, 'payload=', payload); throw error }
   return toUi(data)
 }
 
 export async function updateEmployee(id, ui) {
+  const payload = toDb(ui)
   const { data, error } = await supabase
     .from('employees')
-    .update(toDb(ui))
+    .update(payload)
     .eq('id', id)
     .select()
     .single()
-  if (error) throw error
+  if (error) { console.error('[employees.update]', error, 'id=', id, 'payload=', payload); throw error }
   return toUi(data)
 }
 
@@ -86,5 +88,38 @@ export async function deleteEmployee(id) {
     .from('employees')
     .delete()
     .eq('id', id)
-  if (error) throw error
+  if (error) { console.error('[employees.delete]', error, 'id=', id); throw error }
+}
+
+// Bulk upsert by name within orgId — CSV/Excelからの一括反映用
+export async function bulkUpsertByName({ orgId, items }) {
+  if (!orgId) throw new Error('orgId is required')
+  if (!items?.length) return { inserted: 0, updated: 0 }
+  // 1) 既存社員を取得
+  const { data: existing, error: e1 } = await supabase
+    .from('employees')
+    .select('id, name')
+    .eq('org_id', orgId)
+  if (e1) { console.error('[employees.bulkUpsert.fetch]', e1); throw e1 }
+  const byName = new Map((existing ?? []).map(r => [r.name, r.id]))
+  let inserted = 0, updated = 0
+  for (const ui of items) {
+    const payload = toDb(ui, orgId)
+    if (byName.has(ui.name)) {
+      const id = byName.get(ui.name)
+      const { error } = await supabase
+        .from('employees')
+        .update(payload)
+        .eq('id', id)
+      if (error) { console.error('[employees.bulkUpsert.update]', error, payload); throw error }
+      updated++
+    } else {
+      const { error } = await supabase
+        .from('employees')
+        .insert(payload)
+      if (error) { console.error('[employees.bulkUpsert.insert]', error, payload); throw error }
+      inserted++
+    }
+  }
+  return { inserted, updated }
 }

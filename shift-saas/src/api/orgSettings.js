@@ -17,15 +17,22 @@ export async function loadSettings(orgId) {
     .select('settings, name')
     .eq('id', orgId)
     .maybeSingle()
-  if (error) throw error
+  if (error) { console.error('[orgSettings.loadSettings]', error); throw error }
   return data?.settings ?? {}
 }
 
 export async function saveSettings(orgId, settings) {
   if (!orgId) throw new Error('orgId is required')
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('organizations')
     .update({ settings })
     .eq('id', orgId)
-  if (error) throw error
+    .select()
+  if (error) { console.error('[orgSettings.saveSettings]', error, 'settings=', settings); throw error }
+  if (!data?.length) {
+    const msg = '保存対象が見つかりません（権限不足の可能性）'
+    console.error('[orgSettings.saveSettings]', msg, 'orgId=', orgId)
+    throw new Error(msg)
+  }
+  return data[0]
 }

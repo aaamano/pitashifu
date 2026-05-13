@@ -169,34 +169,29 @@ export default function Members() {
       const wb = await readWorkbookFromFile(pendingCsvFile)
       const { staff: excelStaff } = extractStaffList(wb)
       if (!excelStaff.length) { setCsvMsg('Excel からスタッフを読み取れませんでした。'); setShowCsvModal(false); return }
-      let updated = 0, added = 0
-      const next = [...members]
-      excelStaff.forEach(({ no, name, wage, transit }) => {
-        const idx = next.findIndex(m => m.id === no)
-        if (idx >= 0) {
-          next[idx] = {
-            ...next[idx],
-            name: name || next[idx].name,
-            wage: wage ?? next[idx].wage,
-            transitPerDay: transit ?? next[idx].transitPerDay,
-          }
-          updated++
-        } else {
-          next.push({
-            ...BLANK_MEMBER,
-            id: no,
-            name,
-            type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7,
-            wage: wage ?? 1050,
-            transitPerDay: transit ?? 0,
-          })
-          added++
+      const items = excelStaff.map(({ name, wage, transit }) => ({
+        name,
+        type: 'P', role: 'スタッフ', skills: [], hourlyOrders: 7,
+        wage: wage ?? 1050,
+        transitPerDay: transit ?? 0,
+      }))
+      // DBに反映
+      if (orgId) {
+        try {
+          const { inserted, updated } = await employeesApi.bulkUpsertByName({ orgId, items })
+          const fresh = await employeesApi.listEmployees(orgId)
+          setMembers(fresh)
+          setCsvMsg(`✓ Excel取込: 更新${updated}名 / 新規${inserted}名`)
+        } catch (e) {
+          setErrMsg(e.message || 'DB保存に失敗しました')
+          setCsvMsg('')
         }
-      })
-      setMembers(next)
-      setCsvMsg(`✓ Excel取込: 更新${updated}名 / 新規${added}名`)
+      } else {
+        setErrMsg('orgIdが取得できないためDBに反映できません')
+      }
       setTimeout(() => setCsvMsg(''), 4000)
-    } catch {
+    } catch (e) {
+      console.error('[ExcelUpload]', e)
       setCsvMsg('Excel の読み込みに失敗しました。')
     }
     setShowCsvModal(false)
@@ -214,35 +209,40 @@ export default function Members() {
   const executeMemberCsvUpload = () => {
     if (!pendingCsvFile) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const labelToKey = Object.fromEntries(Object.entries(skillLabels).map(([k, v]) => [v, k]))
         const lines = ev.target.result.replace(/^﻿/, '').trim().split('\n').slice(1)
-        let updated = 0
-        const nextMembers = [...members]
-        const nextConstraints = { ...constraints }
+        const items = []
         lines.forEach(line => {
           const p = line.split(',').map(s => s.trim())
           if (p.length < 5) return
           const [name, type, role, skillsRaw, wageStr, transitStr, priorityStr] = p
           if (!name) return
-          const idx = nextMembers.findIndex(m => m.name === name)
-          if (idx < 0) return
-          const skills = skillsRaw ? skillsRaw.split(';').map(s => labelToKey[s.trim()]).filter(Boolean) : nextMembers[idx].skills
-          const wage       = parseInt(wageStr)  || nextMembers[idx].wage
-          const transit    = parseInt(transitStr) >= 0 ? parseInt(transitStr) : nextMembers[idx].transitPerDay
-          const priority   = parseInt(priorityStr) || nextMembers[idx].retentionPriority
-          nextMembers[idx] = { ...nextMembers[idx], type: type || nextMembers[idx].type, role: role || nextMembers[idx].role, skills, wage, transitPerDay: transit }
-          const cid = nextMembers[idx].id
-          nextConstraints[cid] = { ...(nextConstraints[cid] || BLANK_CONSTRAINT), retentionPriority: Math.min(10, Math.max(1, priority)) }
-          updated++
+          const skills = skillsRaw ? skillsRaw.split(';').map(s => labelToKey[s.trim()]).filter(Boolean) : []
+          items.push({
+            name,
+            type: type || 'P',
+            role: role || 'staff',
+            skills,
+            wage:               parseInt(wageStr)     || 1050,
+            transitPerDay:      parseInt(transitStr)  || 0,
+            retentionPriority:  Math.min(10, Math.max(1, parseInt(priorityStr) || 5)),
+            hourlyOrders:       7,
+          })
         })
-        if (!updated) { setCsvMsg('一致するスタッフ名が見つかりませんでした。'); setShowCsvModal(false); return }
-        setMembers(nextMembers)
-        setConstraints(nextConstraints)
-        setCsvMsg(`✓ ${updated}名のデータを更新しました`)
+        if (!items.length) { setCsvMsg('CSVから有効なスタッフを読み取れませんでした。'); setShowCsvModal(false); return }
+        if (!orgId) { setErrMsg('orgIdが取得できません'); setShowCsvModal(false); return }
+        const { inserted, updated } = await employeesApi.bulkUpsertByName({ orgId, items })
+        const fresh = await employeesApi.listEmployees(orgId)
+        setMembers(fresh)
+        setCsvMsg(`✓ 更新${updated}名 / 新規${inserted}名`)
         setTimeout(() => setCsvMsg(''), 3000)
-      } catch { setCsvMsg('CSVの読み込みに失敗しました。') }
+      } catch (e) {
+        console.error('[CSVUpload]', e)
+        setCsvMsg('CSVの読み込みに失敗しました。')
+        setErrMsg(e.message || 'CSV取込に失敗しました')
+      }
     }
     reader.readAsText(pendingCsvFile, 'UTF-8')
     setShowCsvModal(false)
@@ -253,7 +253,7 @@ export default function Members() {
   const executeAirrejiMemberUpload = () => {
     if (!pendingAltCsvFile) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const text = ev.target.result.replace(/^﻿/, '').trim()
         const lines = text.split(/\r?\n/).filter(l => l.trim())
@@ -316,10 +316,28 @@ export default function Members() {
           setShowCsvModal(false); return
         }
         setMembers(next)
-        const msg = `✓ Airレジ取込: 新規${added}名 / 更新${updated}名` + (skipped ? ` / 退職スキップ${skipped}件` : '')
-        setCsvMsg(msg)
+        // DBへも反映（新規/更新分）
+        if (orgId) {
+          try {
+            const items = next.filter(m => !m.id || typeof m.id !== 'string').map(m => ({ ...m }))
+            // 全件 upsert（過剰なら最適化）
+            const { inserted, updated: dbUpdated } = await employeesApi.bulkUpsertByName({ orgId, items: next })
+            const fresh = await employeesApi.listEmployees(orgId)
+            setMembers(fresh)
+            const msg = `✓ Airレジ取込: 更新${dbUpdated}名 / 新規${inserted}名` + (skipped ? ` / 退職スキップ${skipped}件` : '')
+            setCsvMsg(msg)
+          } catch (e) {
+            console.error('[AirrejiUpload]', e)
+            setErrMsg(e.message || 'DB保存に失敗しました')
+            setCsvMsg('')
+          }
+        } else {
+          const msg = `✓ Airレジ取込: 新規${added}名 / 更新${updated}名` + (skipped ? ` / 退職スキップ${skipped}件` : '')
+          setCsvMsg(msg)
+        }
         setTimeout(() => setCsvMsg(''), 4000)
       } catch (err) {
+        console.error('[AirrejiUpload]', err)
         setCsvMsg('Airレジ CSV の読み込みに失敗しました')
       }
     }

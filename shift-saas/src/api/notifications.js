@@ -38,7 +38,7 @@ export async function listNotifications() {
     .from('notifications')
     .select('*')
     .order('created_at', { ascending: false })
-  if (error) throw error
+  if (error) { console.error('[notifications.list]', error); throw error }
   return (data ?? []).map(toUi)
 }
 
@@ -47,7 +47,7 @@ export async function markRead(id) {
     .from('notifications')
     .update({ read: true })
     .eq('id', id)
-  if (error) throw error
+  if (error) { console.error('[notifications.markRead]', error); throw error }
 }
 
 export async function markAllRead(ids) {
@@ -56,5 +56,26 @@ export async function markAllRead(ids) {
     .from('notifications')
     .update({ read: true })
     .in('id', ids)
-  if (error) throw error
+  if (error) { console.error('[notifications.markAllRead]', error); throw error }
+}
+
+// マネージャーが通知を作成
+// recipientId が null なら org 全体宛
+export async function createNotification({ orgId, recipientId, type, title, body }) {
+  if (!orgId) throw new Error('orgId is required')
+  const payload = {
+    org_id:       orgId,
+    recipient_id: recipientId ?? null,
+    type:         type || 'info',
+    title:        title || '',
+    body:         body  || '',
+    read:         false,
+  }
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert(payload)
+    .select()
+    .single()
+  if (error) { console.error('[notifications.create]', error, payload); throw error }
+  return toUi(data)
 }
