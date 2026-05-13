@@ -16,7 +16,7 @@ function toUi(row) {
     authUserId:         row.auth_user_id,
     name:               row.name,
     email:              row.email,
-    role:               row.role, // 'owner'|'admin'|'manager'|'staff'
+    role:               row.role,
     type:               row.employment_type === 'full_time' ? 'F' : 'P',
     wage:               row.wage,
     transitPerDay:      row.transit_per_day,
@@ -28,6 +28,7 @@ function toUi(row) {
     emergencyContact:   row.emergency_contact,
     bankInfo:           row.bank_info,
     employmentStart:    row.employment_start,
+    fixedShift:         row.fixed_shift || {},
   }
 }
 
@@ -44,6 +45,7 @@ function toDb(ui, orgId) {
     retention_priority: Number(ui.retentionPriority)  || 5,
     target_earnings:    Number(ui.targetEarnings)     || 0,
     phone:              ui.phone || null,
+    fixed_shift:        ui.fixedShift && typeof ui.fixedShift === 'object' ? ui.fixedShift : {},
   }
   if (orgId) row.org_id = orgId
   return row
