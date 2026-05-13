@@ -24,7 +24,7 @@ const MINS  = ['00', '15', '30', '45']
 export { TASK_COLORS }
 
 export default function StoreSettings() {
-  const { stores } = useOrg()
+  const { orgId, stores } = useOrg()
   const storeId = stores[0]?.id
 
   const [config,    setConfig]    = useState(initialConfig)
@@ -37,28 +37,35 @@ export default function StoreSettings() {
   const [skills,    setSkills]    = useState(Object.entries(initialSkillLabels).map(([key, label]) => ({ key, label })))
   const [newSkill,  setNewSkill]  = useState({ key: '', label: '' })
   const [editSkill, setEditSkill] = useState(null)
+  const [sukimaEnabled, setSukimaEnabled] = useState(true) // 会社レベル: スキマバイト機能のon/off
 
   useEffect(() => {
-    if (!storeId) return
+    if (!storeId || !orgId) return
     let cancelled = false
-    loadSettings(storeId)
-      .then(s => {
-        if (cancelled || !s) return
-        setConfig(prev => ({
-          ...prev,
-          openHour:        s.openHour        ?? prev.openHour,
-          closeHour:       s.closeHour       ?? prev.closeHour,
-          slotInterval:    s.slotInterval    ?? prev.slotInterval,
-          avgProductivity: s.avgProductivity ?? prev.avgProductivity,
-          breakRules:      s.breakRules      ?? prev.breakRules,
-          specialTasks:    s.specialTasks    ?? prev.specialTasks,
-        }))
-        if (s.address) setAddress(s.address)
-        if (s.skillLabels) setSkills(Object.entries(s.skillLabels).map(([key, label]) => ({ key, label })))
+    Promise.all([
+      loadSettings(storeId),
+      loadSettings(orgId),
+    ])
+      .then(([storeS, companyS]) => {
+        if (cancelled) return
+        if (storeS) {
+          setConfig(prev => ({
+            ...prev,
+            openHour:        storeS.openHour        ?? prev.openHour,
+            closeHour:       storeS.closeHour       ?? prev.closeHour,
+            slotInterval:    storeS.slotInterval    ?? prev.slotInterval,
+            avgProductivity: storeS.avgProductivity ?? prev.avgProductivity,
+            breakRules:      storeS.breakRules      ?? prev.breakRules,
+            specialTasks:    storeS.specialTasks    ?? prev.specialTasks,
+          }))
+          if (storeS.address) setAddress(storeS.address)
+          if (storeS.skillLabels) setSkills(Object.entries(storeS.skillLabels).map(([key, label]) => ({ key, label })))
+        }
+        if (typeof companyS?.sukimaEnabled === 'boolean') setSukimaEnabled(companyS.sukimaEnabled)
       })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
-  }, [storeId])
+  }, [storeId, orgId])
 
   const addSkill = () => {
     if (!newSkill.key.trim() || !newSkill.label.trim()) return
@@ -70,17 +77,19 @@ export default function StoreSettings() {
   const updateSkill = (idx, field, val) => setSkills(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s))
 
   const handleSave = async () => {
-    if (!storeId) { setErrMsg('店舗IDが取得できません'); return }
+    if (!storeId || !orgId) { setErrMsg('店舗ID/会社IDが取得できません'); return }
     setSaving(true); setErrMsg('')
     const skillLabels = skills.reduce((acc, s) => { acc[s.key] = s.label; return acc }, {})
-    const settings = {
+    const storeSettings = {
       openHour: config.openHour, closeHour: config.closeHour,
       slotInterval: config.slotInterval, avgProductivity: config.avgProductivity,
       breakRules: config.breakRules, specialTasks: config.specialTasks,
       skillLabels, address,
     }
     try {
-      await saveSettings(storeId, settings)
+      await saveSettings(storeId, storeSettings)
+      const companyExisting = (await loadSettings(orgId)) || {}
+      await saveSettings(orgId, { ...companyExisting, sukimaEnabled })
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e) {
       setErrMsg(e.message || '保存に失敗しました')
@@ -321,6 +330,41 @@ export default function StoreSettings() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── 機能の有効化 (会社レベル) ── */}
+      <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>
+        <div style={{ marginBottom:14 }}>
+          <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>機能の有効化（会社単位）</h2>
+          <p style={{ fontSize:11, color:'#64748b', marginTop:4, marginBottom:0 }}>会社配下の全店舗・全従業員に適用されます</p>
+        </div>
+        <label style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', background:'#f8fafc', borderRadius:8, border:'1px solid #e2e8f0', cursor:'pointer' }}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={sukimaEnabled}
+            onClick={() => setSukimaEnabled(v => !v)}
+            style={{
+              flexShrink:0, width:44, height:24, borderRadius:12, border:'none',
+              background: sukimaEnabled ? '#4f46e5' : '#cbd5e1', position:'relative',
+              cursor:'pointer', transition:'background .15s', padding:0,
+            }}
+          >
+            <span style={{
+              position:'absolute', top:2, left: sukimaEnabled ? 22 : 2, width:20, height:20,
+              borderRadius:'50%', background:'white', transition:'left .15s',
+              boxShadow:'0 1px 3px rgba(0,0,0,0.2)',
+            }} />
+          </button>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:'#0f172a' }}>⚡ スキマバイト機能</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>
+              {sukimaEnabled
+                ? '従業員アプリに「スキマ」タブが表示されます'
+                : '従業員アプリの「スキマ」タブを非表示にします'}
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* Modal */}

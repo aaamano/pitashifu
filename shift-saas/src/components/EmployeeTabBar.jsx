@@ -1,4 +1,5 @@
 import { Link, useLocation, useParams } from 'react-router-dom'
+import { useOrg } from '../context/OrgContext'
 import { employeeNotifications } from '../data/mockData'
 
 const UNREAD = employeeNotifications.filter(n => !n.read).length
@@ -48,10 +49,16 @@ const IconPerson = ({ on }) => (
   </svg>
 )
 
-export default function EmployeeTabBar({ base: baseProp, sukima = false }) {
+// `sukima` propを指定しない場合は org.settings.sukimaEnabled で判定（デフォルトtrue）
+export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
   const { pathname } = useLocation()
   const { orgId } = useParams()
+  const { stores, org } = useOrg()
   const base = baseProp ?? `/${orgId}/employee`
+  const storeSettings = stores?.[0]?.settings
+  const companySettings = org?.settings
+  const settingsSukima = storeSettings?.sukimaEnabled ?? companySettings?.sukimaEnabled
+  const sukima = sukimaProp ?? (settingsSukima !== false)
 
   const getActive = () => {
     if (pathname.includes('/submit'))        return 'submit'
