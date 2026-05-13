@@ -210,5 +210,35 @@ export async function saveSubmission({ storeId, periodName, shiftRow, submit }) 
       .insert(rows)
     if (error) throw error
   }
+
+  // 提出時 (submit=true) は管理者にお知らせ
+  if (submit) {
+    try {
+      // store の親 org（会社） に通知（recipient_id=NULL で org全員宛だが、staffも見える点には注意）
+      const { data: store } = await supabase
+        .from('organizations')
+        .select('parent_id, name')
+        .eq('id', storeId)
+        .maybeSingle()
+      const orgId = store?.parent_id ?? storeId
+      // 自分の名前を取得
+      const { data: me } = await supabase
+        .from('employees')
+        .select('name')
+        .eq('id', myId)
+        .maybeSingle()
+      await supabase.from('notifications').insert({
+        org_id:       orgId,
+        recipient_id: null,
+        type:         'submit',
+        title:        `${me?.name ?? '従業員'} からシフト希望が提出されました`,
+        body:         `${periodName} のシフト希望が提出されました。確認してください。`,
+        read:         false,
+      })
+    } catch (e) {
+      console.error('[shiftRequests.saveSubmission.notify]', e)
+    }
+  }
+
   return period.id
 }
