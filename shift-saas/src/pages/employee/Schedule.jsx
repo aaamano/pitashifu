@@ -1,11 +1,31 @@
-import { useState, useEffect } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { staff as mockStaff, daysConfig, YEAR_MONTH, shiftData as mockShiftData } from '../../data/mockData'
+import { useState, useEffect, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { staff as mockStaff } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { useOrg } from '../../context/OrgContext'
 import { supabase } from '../../lib/supabase'
-import * as versionsApi from '../../api/versions'
 import * as shiftsApi from '../../api/shifts'
+
+const INDIGO = '#4F46E5'
+const CORAL  = '#FF6B6B'
+const BORDER = '#E2E8F0'
+const DOW_HEADERS = ['日', '月', '火', '水', '木', '金', '土']
+const DOW_JP = ['日', '月', '火', '水', '木', '金', '土']
+
+// 月の daysConfig を動的生成
+function buildDaysConfig(year, month) {
+  const lastDay = new Date(year, month, 0).getDate()
+  return Array.from({ length: lastDay }, (_, i) => {
+    const day = i + 1
+    const dow = new Date(year, month - 1, day).getDay()
+    return {
+      day,
+      dow: DOW_JP[dow],
+      dowIdx: dow,
+      isWeekend: dow === 0 || dow === 6,
+    }
+  })
+}
 
 // assigned[day][slot]=[empId,...] → 当該日の連続スロット → コード
 function deriveDayCode(daySlots, empId) {
@@ -25,24 +45,6 @@ function deriveDayCode(daySlots, empId) {
   if (e === 22) return `${s}-L`
   return `${s}-${e}`
 }
-
-const INDIGO = '#4F46E5'
-const CORAL  = '#FF6B6B'
-const BORDER = '#E2E8F0'
-const TODAY_DAY = 11
-
-// April 2026: April 1 = 水 = index 3 in 日(0)月(1)火(2)水(3)木(4)金(5)土(6)
-const FIRST_DOW = 3
-const DOW_HEADERS = ['日', '月', '火', '水', '木', '金', '土']
-// 土=6, 日=0
-const isWeekendDow = dow => dow === 0 || dow === 6
-
-// Build calendar cells: nulls for padding + day numbers 1-30
-const calCells = [
-  ...Array(FIRST_DOW).fill(null),
-  ...Array.from({ length: 30 }, (_, i) => i + 1),
-]
-while (calCells.length % 7 !== 0) calCells.push(null)
 
 function parseCode(code) {
   if (!code || code === 'X') return null
@@ -66,43 +68,95 @@ function shiftHours(code) {
   return Math.max(0, t.end - t.start - 1)
 }
 
+const pad = (n) => String(n).padStart(2, '0')
+
 export default function Schedule({ base: baseProp, sukima = false }) {
   const { orgId: paramOrg } = useParams()
+  const navigate = useNavigate()
   const base = baseProp ?? `/${paramOrg}/employee`
   const { stores } = useOrg()
   const storeId = stores[0]?.id
-  const [selectedDay, setSelectedDay] = useState(TODAY_DAY)
 
-  // 現在のログインユーザー (employees行) と シフト配列を DB から読み込む
-  const [me, setMe] = useState(null)
-  const [myShifts, setMyShifts] = useState(Array(30).fill('X'))
+  // 月選択（今日の年月を初期値）
+  const today = new Date()
+  const [year,  setYear]  = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const monthLabel = `${year}年${month}月`
+  const daysConfig = useMemo(() => buildDaysConfig(year, month), [year, month])
+  const firstDow   = daysConfig[0]?.dowIdx ?? 0
+
+  // 今日にあたる日（同じ月の時のみ）
+  const todayDay = (today.getFullYear() === year && today.getMonth() + 1 === month)
+    ? today.getDate()
+    : daysConfig[0]?.day ?? 1
+  const [selectedDay, setSelectedDay] = useState(todayDay)
+  useEffect(() => { setSelectedDay(todayDay) }, [year, month, todayDay])
+
+  const prevMonth = () => {
+    if (month === 1) { setYear(y => y - 1); setMonth(12) } else { setMonth(m => m - 1) }
+  }
+  const nextMonth = () => {
+    if (month === 12) { setYear(y => y + 1); setMonth(1) } else { setMonth(m => m + 1) }
+  }
+
+  // 現在ログイン中ユーザーの employees 行
+  const [me, setMe]               = useState(null)
+  const [meLoading, setMeLoading] = useState(true)
+  const [myShifts, setMyShifts]   = useState([])
+
   useEffect(() => {
     let cancelled = false
+    setMeLoading(true)
     ;(async () => {
       try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (cancelled) return
+        if (!user) { setMe(null); return }
         const { data: meRow } = await supabase
           .from('employees')
           .select('*')
+          .eq('auth_user_id', user.id)
           .maybeSingle()
-        if (cancelled) return
-        setMe(meRow)
-        if (!meRow || !storeId) return
-        // 最新version (確定優先) の assigned から自分のシフトを抽出
-        const versions = await versionsApi.listVersions(storeId)
-        if (cancelled || !versions?.length) return
-        const target = versions.find(v => v.status === 'confirmed') || versions[0]
-        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
-        if (cancelled) return
-        const codes = daysConfig.map(d => deriveDayCode(assigned?.[d.day], meRow.id))
-        setMyShifts(codes)
-      } catch (e) { console.error('[Schedule.load]', e) }
+        if (!cancelled) setMe(meRow ?? null)
+      } catch (e) {
+        console.error('[Schedule.loadMe]', e)
+      } finally {
+        if (!cancelled) setMeLoading(false)
+      }
     })()
     return () => { cancelled = true }
-  }, [storeId])
+  }, [])
 
-  // フォールバック: DBから取れていない時は mock を使う（開発時のみ）
-  const meDisp = me ?? mockStaff[0]
-  const myShiftsDisp = me ? myShifts : (mockShiftData[mockStaff[0].id] || [])
+  // 選択月のシフトを date 範囲でロードして自分のコード配列を組み立て
+  useEffect(() => {
+    if (!me || !storeId) { setMyShifts(daysConfig.map(() => 'X')); return }
+    let cancelled = false
+    const dateFrom = `${year}-${pad(month)}-01`
+    const dateTo   = `${year}-${pad(month)}-${pad(daysConfig.length)}`
+    shiftsApi.loadShiftsByDateRange({ storeId, dateFrom, dateTo })
+      .then(assigned => {
+        if (cancelled) return
+        setMyShifts(daysConfig.map(d => deriveDayCode(assigned?.[d.day], me.id)))
+      })
+      .catch(e => console.error('[Schedule.loadShifts]', e))
+    return () => { cancelled = true }
+  }, [me, storeId, year, month, daysConfig])
+
+  // DBから取れていない時のフォールバック（未ログインや読み込み中）
+  const meDisp = me ?? (meLoading ? null : mockStaff[0])
+  const myShiftsDisp = myShifts.length === daysConfig.length ? myShifts : daysConfig.map(() => 'X')
+
+  if (!meDisp) {
+    return (
+      <>
+        <div className="pita-phone-header" style={{ justifyContent: 'center' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A' }}>読み込み中…</div>
+        </div>
+        <div className="pita-phone-body" />
+        <EmployeeTabBar base={base} sukima={sukima} />
+      </>
+    )
+  }
 
   const workDays  = myShiftsDisp.filter(c => c && c !== 'X').length
   const workHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
@@ -112,11 +166,25 @@ export default function Schedule({ base: baseProp, sukima = false }) {
   const selShift = parseCode(selCode)
   const selDow   = daysConfig[selectedDay - 1]?.dow
 
+  // カレンダーセル: nullで先頭パディング → 日番号 → nullで末尾パディング
+  const calCells = [
+    ...Array(firstDow).fill(null),
+    ...daysConfig.map(d => d.day),
+  ]
+  while (calCells.length % 7 !== 0) calCells.push(null)
+
   return (
     <>
-      {/* Header */}
-      <div className="pita-phone-header" style={{ justifyContent: 'center' }}>
-        <div style={{ fontSize: 17, fontWeight: 800, color: '#0F172A' }}>{YEAR_MONTH}</div>
+      {/* Header with month navigation */}
+      <div className="pita-phone-header" style={{ justifyContent: 'space-between' }}>
+        <button onClick={prevMonth} aria-label="前月"
+          style={{ background:'none', border:'none', color: INDIGO, fontSize: 18, fontWeight: 700, cursor: 'pointer', padding: '4px 10px' }}>‹</button>
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#0F172A' }}>{monthLabel}</div>
+          <div style={{ fontSize: 10, color: '#94A3B8' }}>{meDisp.name}</div>
+        </div>
+        <button onClick={nextMonth} aria-label="翌月"
+          style={{ background:'none', border:'none', color: INDIGO, fontSize: 18, fontWeight: 700, cursor: 'pointer', padding: '4px 10px' }}>›</button>
       </div>
 
       <div className="pita-phone-body">
@@ -132,66 +200,41 @@ export default function Schedule({ base: baseProp, sukima = false }) {
               flex: 1, background: 'white', border: `1px solid ${BORDER}`,
               borderRadius: 10, padding: '9px 6px', textAlign: 'center',
             }}>
-              <div style={{ fontSize: 9, color: '#64748B', marginBottom: 3, fontWeight: 500 }}>{label}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>{value}</div>
+              <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 2 }}>{label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{value}</div>
             </div>
           ))}
         </div>
 
         {/* Calendar */}
-        <div style={{ padding: '12px 12px 0' }}>
-          <div style={{ background: 'white', border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden' }}>
-            {/* Day-of-week header */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${BORDER}` }}>
-              {DOW_HEADERS.map((d, i) => (
-                <div key={d} style={{
-                  textAlign: 'center', fontSize: 10, fontWeight: 700, padding: '7px 0',
-                  color: i === 0 ? CORAL : i === 6 ? '#3B82F6' : '#64748B',
-                }}>
-                  {d}
-                </div>
+        <div style={{ padding: '14px 12px', flexShrink: 0 }}>
+          <div style={{ background: 'white', borderRadius: 12, padding: '10px 6px', border: `1px solid ${BORDER}` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+              {DOW_HEADERS.map((dow, i) => (
+                <div key={dow} style={{ fontSize: 9, fontWeight: 600, color: i === 0 ? CORAL : i === 6 ? '#3b82c4' : '#94A3B8', textAlign: 'center', padding: '4px 0' }}>{dow}</div>
               ))}
             </div>
-            {/* Calendar grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
               {calCells.map((day, idx) => {
-                if (!day) return <div key={`e${idx}`} style={{ aspectRatio: '1', borderRight: idx % 7 < 6 ? `1px solid ${BORDER}` : 'none', borderBottom: `1px solid ${BORDER}` }} />
+                if (day == null) return <div key={idx} />
                 const code    = myShiftsDisp[day - 1]
                 const shift   = parseCode(code)
-                const isToday = day === TODAY_DAY
-                const isSel   = day === selectedDay
-                const dowIdx  = (idx) % 7
-                const isSun   = dowIdx === 0
-                const isSat   = dowIdx === 6
-                const OPEN_H  = 9   // chart span start
-                const SPAN    = 14  // hours displayed (9-23)
+                const dowIdx  = (firstDow + day - 1) % 7
+                const isSelected = day === selectedDay
+                const dowColor = dowIdx === 0 ? CORAL : dowIdx === 6 ? '#3b82c4' : '#0F172A'
                 return (
-                  <button
-                    key={day}
-                    onClick={() => setSelectedDay(day)}
-                    style={{
-                      aspectRatio: '1', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'flex-start', padding: '5px 2px 2px',
-                      background: isSel ? INDIGO : isToday ? '#EEF0FE' : 'transparent',
-                      border: 'none',
-                      borderRight: idx % 7 < 6 ? `1px solid ${BORDER}` : 'none',
-                      borderBottom: `1px solid ${BORDER}`,
-                      cursor: 'pointer', position: 'relative', overflow: 'hidden',
-                      gap: 2,
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 12, fontWeight: isToday || isSel ? 800 : 400, lineHeight: 1,
-                      color: isSel ? 'white' : isToday ? INDIGO : isSun ? CORAL : isSat ? '#3B82F6' : '#0F172A',
-                    }}>
-                      {day}
-                    </span>
+                  <button key={idx} onClick={() => setSelectedDay(day)} style={{
+                    aspectRatio: '1 / 1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    background: isSelected ? INDIGO : shift ? '#EEF0FE' : 'white',
+                    color: isSelected ? 'white' : dowColor,
+                    border: isSelected ? `1px solid ${INDIGO}` : `1px solid ${BORDER}`,
+                    borderRadius: 6, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0,
+                  }}>
+                    <div style={{ fontWeight: isSelected ? 700 : 500 }}>{day}</div>
                     {shift && (
-                      <div style={{
-                        width: '80%', height: 4, borderRadius: 2,
-                        background: isSel ? 'rgba(255,255,255,0.7)' : INDIGO,
-                        flexShrink: 0,
-                      }} />
+                      <div style={{ fontSize: 8, marginTop: 1, opacity: isSelected ? 0.85 : 0.7, color: isSelected ? 'white' : '#475569' }}>
+                        {fmtH(shift.start)}
+                      </div>
                     )}
                   </button>
                 )
@@ -200,86 +243,37 @@ export default function Schedule({ base: baseProp, sukima = false }) {
           </div>
         </div>
 
-        {/* Selected day detail */}
-        <div style={{ padding: '10px 12px 0' }}>
-          <div style={{
-            background: 'white', border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden',
-          }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '11px 14px', borderBottom: selShift ? `1px solid ${BORDER}` : 'none',
-            }}>
-              <div>
-                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 500 }}>{selDow}曜日</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', marginTop: 1 }}>
-                  4月{selectedDay}日
-                  {selectedDay === TODAY_DAY && (
-                    <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 700, color: INDIGO, background: '#EEF0FE', padding: '2px 7px', borderRadius: 5 }}>今日</span>
-                  )}
-                </div>
+        {/* Selected day details */}
+        <div style={{ padding: '0 12px 14px', flexShrink: 0 }}>
+          <div style={{ background: 'white', borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
+                {month}月{selectedDay}日 <span style={{ fontSize: 11, color: selDow === '日' ? CORAL : selDow === '土' ? '#3b82c4' : '#94A3B8', marginLeft: 4 }}>({selDow})</span>
               </div>
-              {selShift ? (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: '#DCFCE7', color: '#065F46' }}>確定済み</span>
-              ) : (
-                <span style={{ fontSize: 10, fontWeight: 600, padding: '4px 10px', borderRadius: 20, background: '#F1F5F9', color: '#94A3B8' }}>お休み</span>
-              )}
+              <div style={{ fontSize: 11, fontWeight: 600, color: selShift ? INDIGO : '#94A3B8' }}>
+                {selShift ? '出勤' : '休み'}
+              </div>
             </div>
             {selShift ? (
-              <div style={{ padding: '12px 14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: INDIGO, lineHeight: 1 }}>{fmtH(selShift.start)}</div>
-                    <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 2 }}>開始</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {[
+                  { l: '勤務時間', v: `${fmtH(selShift.start)} 〜 ${fmtH(selShift.end)}` },
+                  { l: '労働時間', v: `${Math.max(0, selShift.end - selShift.start - 1)}h` },
+                  { l: '想定報酬', v: `¥${(Math.max(0, selShift.end - selShift.start - 1) * (meDisp.wage ?? 1050)).toLocaleString()}` },
+                  { l: '時給',     v: `¥${(meDisp.wage ?? 1050).toLocaleString()}` },
+                ].map(({ l, v }) => (
+                  <div key={l} style={{ background: '#F8FAFC', borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 1 }}>{l}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', fontFamily: 'system-ui' }}>{v}</div>
                   </div>
-                  <div style={{ flex: 1, height: 5, background: '#EEF0FE', borderRadius: 3, position: 'relative' }}>
-                    <div style={{ position: 'absolute', inset: 0, background: INDIGO, borderRadius: 3 }} />
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: INDIGO, lineHeight: 1 }}>{fmtH(selShift.end)}</div>
-                    <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 2 }}>終了</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {[
-                    { l: '勤務時間', v: `${selShift.end - selShift.start}時間` },
-                    { l: '想定報酬', v: `¥${((selShift.end - selShift.start - 1) * (meDisp.wage ?? 1050)).toLocaleString()}` },
-                    { l: '時給',     v: `¥${(meDisp.wage ?? 1050).toLocaleString()}` },
-                  ].map(({ l, v }) => (
-                    <div key={l} style={{ flex: 1, background: '#F8FAFC', borderRadius: 8, padding: '7px 8px' }}>
-                      <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 2 }}>{l}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>{v}</div>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
             ) : (
-              <div style={{ padding: '16px 14px', textAlign: 'center' }}>
-                <div style={{ fontSize: 22, marginBottom: 4 }}>🌙</div>
-                <div style={{ fontSize: 12, color: '#94A3B8', fontWeight: 500 }}>シフトなし</div>
-              </div>
+              <div style={{ fontSize: 12, color: '#94A3B8', textAlign: 'center', padding: '12px 0' }}>この日は出勤予定がありません</div>
             )}
           </div>
         </div>
 
-        {/* Shift manage CTA */}
-        <div style={{ padding: '10px 12px 4px' }}>
-          <Link
-            to={`${base}/submit`}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '13px 16px', background: INDIGO, borderRadius: 12, textDecoration: 'none',
-              boxShadow: '0 4px 12px rgba(79,70,229,0.28)',
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>シフトを管理する</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>5月前半の締め切り: 4月23日</div>
-            </div>
-            <span style={{ fontSize: 18, color: 'white', fontWeight: 700 }}>→</span>
-          </Link>
-        </div>
-
-        <div style={{ height: 8 }} />
       </div>
 
       <EmployeeTabBar base={base} sukima={sukima} />
