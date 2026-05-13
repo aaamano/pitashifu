@@ -70,6 +70,19 @@ function shiftHours(code) {
 
 const pad = (n) => String(n).padStart(2, '0')
 
+// "HH:MM:SS" → 時 (数値)
+function timeStrToH(t) {
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  return h + (m || 0) / 60
+}
+
+const REQUEST_STATUS_LABEL = {
+  draft:     'シフト希望（下書き）',
+  submitted: 'シフト希望（提出済み）',
+  confirmed: 'シフト希望（確定済み）',
+}
+
 export default function Schedule({ base: baseProp, sukima = false }) {
   const { orgId: paramOrg } = useParams()
   const navigate = useNavigate()
@@ -142,25 +155,29 @@ export default function Schedule({ base: baseProp, sukima = false }) {
     return () => { cancelled = true }
   }, [me, storeId, year, month, daysConfig])
 
-  // 選択日の最終編集者情報を shift_requests から取得
-  const [editorInfo, setEditorInfo] = useState(null)
+  // 当月の自分の shift_requests を丸ごとロード
+  const [monthRequests, setMonthRequests] = useState({})
   useEffect(() => {
-    if (!me) { setEditorInfo(null); return }
+    if (!me) { setMonthRequests({}); return }
     let cancelled = false
-    const dateStr = `${year}-${pad(month)}-${pad(selectedDay)}`
+    const dateFrom = `${year}-${pad(month)}-01`
+    const dateTo   = `${year}-${pad(month)}-${pad(daysConfig.length)}`
     ;(async () => {
       try {
         const { data } = await supabase
           .from('shift_requests')
-          .select('last_edited_at, editor:employees!shift_requests_last_edited_by_fkey(name)')
+          .select('date, preferred_start, preferred_end, is_available, status, last_edited_at, editor:employees!shift_requests_last_edited_by_fkey(name)')
           .eq('employee_id', me.id)
-          .eq('date', dateStr)
-          .maybeSingle()
-        if (!cancelled) setEditorInfo(data ?? null)
-      } catch (e) { console.error('[Schedule.editorInfo]', e) }
+          .gte('date', dateFrom)
+          .lte('date', dateTo)
+        if (cancelled) return
+        const map = {}
+        for (const r of data ?? []) map[r.date] = r
+        setMonthRequests(map)
+      } catch (e) { console.error('[Schedule.monthRequests]', e) }
     })()
     return () => { cancelled = true }
-  }, [me, year, month, selectedDay])
+  }, [me, year, month, daysConfig.length])
 
   // DBから取れていない時のフォールバック（未ログインや読み込み中）
   const meDisp = me ?? (meLoading ? null : mockStaff[0])
@@ -185,6 +202,35 @@ export default function Schedule({ base: baseProp, sukima = false }) {
   const selCode  = myShiftsDisp[selectedDay - 1]
   const selShift = parseCode(selCode)
   const selDow   = daysConfig[selectedDay - 1]?.dow
+
+  // 選択日のエントリ一覧（シフト希望 + シフト確定）
+  const selDateStr = `${year}-${pad(month)}-${pad(selectedDay)}`
+  const selRequest = monthRequests[selDateStr]
+  const entries = []
+  if (selRequest?.is_available && selRequest.preferred_start && selRequest.preferred_end) {
+    const start = timeStrToH(selRequest.preferred_start)
+    const end   = timeStrToH(selRequest.preferred_end)
+    if (start != null && end != null) {
+      entries.push({
+        type:  'request',
+        label: REQUEST_STATUS_LABEL[selRequest.status] ?? 'シフト希望',
+        start, end,
+        color:   '#10B981',
+        bgColor: '#ECFDF5',
+        editor:  selRequest.editor?.name ?? null,
+        editedAt: selRequest.last_edited_at ?? null,
+      })
+    }
+  }
+  if (selShift) {
+    entries.push({
+      type:  'confirmed',
+      label: 'シフト確定',
+      start: selShift.start, end: selShift.end,
+      color:   INDIGO,
+      bgColor: '#EEF0FE',
+    })
+  }
 
   // カレンダーセル: nullで先頭パディング → 日番号 → nullで末尾パディング
   const calCells = [
@@ -266,34 +312,47 @@ export default function Schedule({ base: baseProp, sukima = false }) {
         {/* Selected day details */}
         <div style={{ padding: '0 12px 14px', flexShrink: 0 }}>
           <div style={{ background: 'white', borderRadius: 12, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
-                {month}月{selectedDay}日 <span style={{ fontSize: 11, color: selDow === '日' ? CORAL : selDow === '土' ? '#3b82c4' : '#94A3B8', marginLeft: 4 }}>({selDow})</span>
-              </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: selShift ? INDIGO : '#94A3B8' }}>
-                {selShift ? '出勤' : '休み'}
-              </div>
+            <div style={{ fontSize: 13, color: '#475569', marginBottom: 12, fontWeight: 600 }}>
+              {year}年{month}月{selectedDay}日 <span style={{ color: selDow === '日' ? CORAL : selDow === '土' ? '#3b82c4' : '#94A3B8' }}>({selDow})</span>
             </div>
-            {selShift ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-                {[
-                  { l: '勤務時間', v: `${fmtH(selShift.start)} 〜 ${fmtH(selShift.end)}` },
-                  { l: '労働時間', v: `${Math.max(0, selShift.end - selShift.start - 1)}h` },
-                  { l: '想定報酬', v: `¥${(Math.max(0, selShift.end - selShift.start - 1) * (meDisp.wage ?? 1050)).toLocaleString()}` },
-                  { l: '時給',     v: `¥${(meDisp.wage ?? 1050).toLocaleString()}` },
-                ].map(({ l, v }) => (
-                  <div key={l} style={{ background: '#F8FAFC', borderRadius: 8, padding: '8px 10px' }}>
-                    <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 1 }}>{l}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', fontFamily: 'system-ui' }}>{v}</div>
-                  </div>
-                ))}
-              </div>
+
+            {entries.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#94A3B8', textAlign: 'center', padding: '20px 0' }}>この日は予定がありません</div>
             ) : (
-              <div style={{ fontSize: 12, color: '#94A3B8', textAlign: 'center', padding: '12px 0' }}>この日は出勤予定がありません</div>
-            )}
-            {editorInfo?.last_edited_at && (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${BORDER}`, fontSize: 10, color: '#94A3B8' }}>
-                最終編集: {editorInfo.editor?.name ?? '—'} ／ {new Date(editorInfo.last_edited_at).toLocaleString('ja-JP')}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {entries.map((e, i) => {
+                  const labor = Math.max(0, e.end - e.start - 1)
+                  const pay   = labor * (meDisp.wage ?? 1050)
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'stretch', gap: 14,
+                      padding: '14px 4px',
+                      borderTop: i === 0 ? 'none' : `1px solid ${BORDER}`,
+                    }}>
+                      <div style={{ minWidth: 52, textAlign: 'left', fontFamily: 'system-ui' }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: '#0F172A', lineHeight: 1.1 }}>{fmtH(e.start)}</div>
+                        <div style={{ fontSize: 14, color: '#94A3B8', marginTop: 6, lineHeight: 1.1 }}>{fmtH(e.end)}</div>
+                      </div>
+                      <div style={{ width: 3, background: e.color, borderRadius: 2 }} />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <div style={{
+                          display: 'inline-block', alignSelf: 'flex-start',
+                          fontSize: 10, fontWeight: 700, color: e.color,
+                          background: e.bgColor, padding: '2px 8px', borderRadius: 10,
+                          marginBottom: 6,
+                        }}>{e.label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
+                          {labor}h {e.type === 'confirmed' ? `／ ¥${pay.toLocaleString()}` : ''}
+                        </div>
+                        {e.type === 'request' && e.editor && e.editedAt && (
+                          <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 4 }}>
+                            最終編集: {e.editor} ／ {new Date(e.editedAt).toLocaleString('ja-JP')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
