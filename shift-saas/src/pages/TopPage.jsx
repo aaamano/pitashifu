@@ -58,7 +58,7 @@ export default function TopPage() {
         {/* Cards */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:18 }}>
           <PortalCard
-            to="/pitashif/manager"
+            to="/login"
             badge="MANAGER"
             badgeColor="#4F46E5"
             title="マネージャー"
@@ -69,7 +69,7 @@ export default function TopPage() {
             colorSoft="#EEF0FE"
           />
           <PortalCard
-            to="/pitashif/employee"
+            to="/login"
             badge="EMPLOYEE"
             badgeColor="#38BDF8"
             title="従業員"
@@ -84,7 +84,7 @@ export default function TopPage() {
         {/* Ver2 CTA */}
         <div style={{ marginTop:18 }}>
           <Link
-            to="/pitashif/employee-ver2"
+            to="/login"
             style={{
               display:'flex', alignItems:'center', gap:14, padding:'18px 22px',
               background:'white', border:'2px dashed #FF6B6B', borderRadius:14,

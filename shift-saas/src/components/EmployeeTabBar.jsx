@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { employeeNotifications } from '../data/mockData'
 
 const UNREAD = employeeNotifications.filter(n => !n.read).length
@@ -48,8 +48,10 @@ const IconPerson = ({ on }) => (
   </svg>
 )
 
-export default function EmployeeTabBar({ base = '/pitashif/employee', sukima = false }) {
+export default function EmployeeTabBar({ base: baseProp, sukima = false }) {
   const { pathname } = useLocation()
+  const { orgId } = useParams()
+  const base = baseProp ?? `/${orgId}/employee`
 
   const getActive = () => {
     if (pathname.includes('/submit'))        return 'submit'

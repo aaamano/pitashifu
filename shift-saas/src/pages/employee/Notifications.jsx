@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { employeeNotifications } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 
@@ -9,7 +9,9 @@ const TYPE_CONFIG = {
   info:      { bg: 'bg-slate-100',   icon: 'ℹ️', label: 'お知らせ' },
 }
 
-export default function EmployeeNotifications({ base = '/pitashif/employee', sukima = false }) {
+export default function EmployeeNotifications({ base: baseProp, sukima = false }) {
+  const { orgId } = useParams()
+  const base = baseProp ?? `/${orgId}/employee`
   const [items, setItems] = useState(employeeNotifications)
 
   const markRead = (id) => setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))

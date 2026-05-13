@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { sukimaJobs, DEFAULT_STORE_ADDRESS } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 
@@ -117,6 +117,8 @@ function FilterSheet({ opt, current, onSelect, onClose }) {
 }
 
 export default function SukimaTop() {
+  const { orgId } = useParams()
+  const base = `/${orgId}/employee`
   const [selDate,       setSelDate]       = useState(0)
   const [showMap,       setShowMap]       = useState(false)
   const [showCondition, setShowCondition] = useState(false)
@@ -157,7 +159,7 @@ export default function SukimaTop() {
         <GoogleMapEmbed query={getStoreAddress()} height={260} />
         <div style={{ padding:'8px 12px', display:'flex', flexDirection:'column', gap:6 }}>
           {dayJobs.map(j => (
-            <Link key={j.id} to={`/pitashif/employee-ver2/sukima/${j.id}`} style={{ textDecoration:'none' }}>
+            <Link key={j.id} to={`${base}/sukima/${j.id}`} style={{ textDecoration:'none' }}>
               <div style={{ background:'white', borderRadius:10, padding:'10px 12px', display:'flex', alignItems:'center', gap:10, border:`1px solid ${BORDER}`, boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
                 <div style={{ width:36, height:36, borderRadius:10, background:j.bgColor, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>{j.emoji}</div>
                 <div style={{ flex:1 }}>
@@ -170,7 +172,7 @@ export default function SukimaTop() {
           ))}
         </div>
       </div>
-      <EmployeeTabBar base="/pitashif/employee-ver2" sukima={true} />
+      <EmployeeTabBar sukima={true} />
     </>
   )
 
@@ -338,7 +340,7 @@ export default function SukimaTop() {
             </div>
           )}
           {dayJobs.map(j => (
-            <Link key={j.id} to={`/pitashif/employee-ver2/sukima/${j.id}`} style={{ textDecoration:'none', display:'block', marginBottom:8 }}>
+            <Link key={j.id} to={`${base}/sukima/${j.id}`} style={{ textDecoration:'none', display:'block', marginBottom:8 }}>
               <div style={{ background:'white', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden', display:'flex', boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
                 {/* Emoji thumb */}
                 <div style={{ width:84, flexShrink:0, background:j.bgColor, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', position:'relative', minHeight:96 }}>
@@ -365,7 +367,7 @@ export default function SukimaTop() {
         </div>
       </div>
 
-      <EmployeeTabBar base="/pitashif/employee-ver2" sukima={true} />
+      <EmployeeTabBar sukima={true} />
 
       {/* Filter bottom sheet */}
       {filterSheet && activeSheetOpt && (

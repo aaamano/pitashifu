@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { staff, shiftData, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 
@@ -64,7 +64,9 @@ function GaugeArc({ value, max }) {
   )
 }
 
-export default function EmployeePayroll({ base = '/pitashif/employee', sukima = false }) {
+export default function EmployeePayroll({ base: baseProp, sukima = false }) {
+  const { orgId } = useParams()
+  const base = baseProp ?? `/${orgId}/employee`
   const [activeTab,   setActiveTab]   = useState('month')
   const [goal,        setGoal]        = useState(loadGoal)
   const [editingGoal, setEditingGoal] = useState(false)

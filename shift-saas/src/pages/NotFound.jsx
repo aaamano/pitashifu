@@ -33,11 +33,8 @@ export default function NotFound() {
           <Link to="/" style={{ padding:'10px 20px', borderRadius:10, background:'#4F46E5', color:'white', fontSize:13, fontWeight:700, textDecoration:'none' }}>
             TOPに戻る
           </Link>
-          <Link to="/pitashif/manager" style={{ padding:'10px 20px', borderRadius:10, background:'white', color:'#4F46E5', fontSize:13, fontWeight:700, textDecoration:'none', border:'1px solid #E2E8F0' }}>
-            マネージャー
-          </Link>
-          <Link to="/pitashif/employee-ver2" style={{ padding:'10px 20px', borderRadius:10, background:'white', color:'#38BDF8', fontSize:13, fontWeight:700, textDecoration:'none', border:'1px solid #E2E8F0' }}>
-            従業員 ver2
+          <Link to="/login" style={{ padding:'10px 20px', borderRadius:10, background:'white', color:'#4F46E5', fontSize:13, fontWeight:700, textDecoration:'none', border:'1px solid #E2E8F0' }}>
+            ログイン
           </Link>
         </div>
       </div>

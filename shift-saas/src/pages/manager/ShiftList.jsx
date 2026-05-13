@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { shiftVersions as initialVersions, YEAR_MONTH } from '../../data/mockData'
 import { api } from '../../api/index.js'
 
@@ -17,6 +17,7 @@ function nowStamp() {
 
 export default function ShiftList() {
   const navigate = useNavigate()
+  const { orgId } = useParams()
   const [versions, setVersions]         = useState(initialVersions)
   const [openMenuId, setOpenMenuId]     = useState(null)
   const [renamingId, setRenamingId]     = useState(null)
@@ -218,7 +219,7 @@ export default function ShiftList() {
                   {/* Edit button */}
                   <td style={{ padding:'12px 14px', textAlign:'center', borderBottom:B }}>
                     <button
-                      onClick={() => navigate(`/pitashif/manager/shift/${v.id}`)}
+                      onClick={() => navigate(`/${orgId}/manager/shift/${v.id}`)}
                       style={{
                         padding:'6px 14px', borderRadius:6, border:'none',
                         background:'#4f46e5', color:'white', fontSize:12, fontWeight:600,

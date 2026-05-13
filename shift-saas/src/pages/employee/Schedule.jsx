@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { staff, daysConfig, YEAR_MONTH, shiftData } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 
@@ -46,7 +46,9 @@ function shiftHours(code) {
   return Math.max(0, t.end - t.start - 1)
 }
 
-export default function Schedule({ base = '/pitashif/employee', sukima = false }) {
+export default function Schedule({ base: baseProp, sukima = false }) {
+  const { orgId } = useParams()
+  const base = baseProp ?? `/${orgId}/employee`
   const [selectedDay, setSelectedDay] = useState(TODAY_DAY)
 
   const workDays  = MY_SHIFTS.filter(c => c && c !== 'X').length
