@@ -32,11 +32,24 @@ function toUi(row) {
   }
 }
 
+// DB制約 (role IN ('owner','admin','manager','staff')) に合わせて正規化
+function normalizeRole(value) {
+  const v = String(value ?? '').trim().toLowerCase()
+  if (['owner', 'admin', 'manager', 'staff'].includes(v)) return v
+  // 日本語表記からのマッピング
+  const ja = String(value ?? '').trim()
+  if (['オーナー', 'owner'].includes(ja)) return 'owner'
+  if (['管理者', '管理者(admin)', 'admin'].includes(ja)) return 'admin'
+  if (['マネージャー', '店長', '副店長', 'manager'].includes(ja)) return 'manager'
+  // 上記以外 (例: 'スタッフ', '', null) は全て staff として扱う
+  return 'staff'
+}
+
 function toDb(ui, orgId) {
   const row = {
     name:               ui.name,
     email:              ui.email || '',
-    role:               ui.role || 'staff',
+    role:               normalizeRole(ui.role),
     employment_type:    ui.type === 'F' ? 'full_time' : 'part_time',
     wage:               Number(ui.wage)               || 1050,
     transit_per_day:    Number(ui.transitPerDay)      || 0,
@@ -46,12 +59,19 @@ function toDb(ui, orgId) {
     target_earnings:    Number(ui.targetEarnings)     || 0,
     phone:              ui.phone || null,
   }
-  // fixed_shift は migration 004 が必要。値があるときだけ送る（migration未実行でも本クエリが通るように）
-  if (ui.fixedShift && typeof ui.fixedShift === 'object' && Object.keys(ui.fixedShift).length > 0) {
+  // fixed_shift は migration 004 が必要。
+  // ブランクな blankFixedShift() (全曜日 enabled:false) は実データ無しと見なし送らない。
+  // 実際に enabled になっている曜日があるときだけ送信する。
+  if (hasEnabledFixedShift(ui.fixedShift)) {
     row.fixed_shift = ui.fixedShift
   }
   if (orgId) row.org_id = orgId
   return row
+}
+
+function hasEnabledFixedShift(fs) {
+  if (!fs || typeof fs !== 'object') return false
+  return Object.values(fs).some(v => v && typeof v === 'object' && v.enabled === true)
 }
 
 export async function listEmployees(orgId) {
