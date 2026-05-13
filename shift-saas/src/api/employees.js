@@ -51,6 +51,10 @@ function toDb(ui, orgId) {
   if (ui.fixedShift && typeof ui.fixedShift === 'object' && Object.keys(ui.fixedShift).length > 0) {
     row.fixed_shift = ui.fixedShift
   }
+  // fixed_shift は migration 004 が必要。値があるときだけ送る（migration未実行でも本クエリが通るように）
+  if (ui.fixedShift && typeof ui.fixedShift === 'object' && Object.keys(ui.fixedShift).length > 0) {
+    row.fixed_shift = ui.fixedShift
+  }
   if (orgId) row.org_id = orgId
   return row
 }
