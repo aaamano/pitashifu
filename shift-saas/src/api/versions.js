@@ -38,7 +38,7 @@ export async function listVersions(storeId) {
   return (data ?? []).map(toUi)
 }
 
-export async function createVersion({ storeId, name }) {
+export async function createVersion({ storeId, name, periodId = null }) {
   // author_id = 現在のログインユーザーの employees.id
   const { data: { user } } = await supabase.auth.getUser()
   const { data: me } = await supabase
@@ -46,14 +46,16 @@ export async function createVersion({ storeId, name }) {
     .select('id')
     .eq('auth_user_id', user?.id ?? '')
     .maybeSingle()
+  const payload = {
+    store_id:  storeId,
+    name,
+    status:    'draft',
+    author_id: me?.id ?? null,
+  }
+  if (periodId) payload.period_id = periodId
   const { data, error } = await supabase
     .from('shift_versions')
-    .insert({
-      store_id:  storeId,
-      name,
-      status:    'draft',
-      author_id: me?.id ?? null,
-    })
+    .insert(payload)
     .select('*, author:employees!shift_versions_author_id_fkey(name)')
     .single()
   if (error) throw error
