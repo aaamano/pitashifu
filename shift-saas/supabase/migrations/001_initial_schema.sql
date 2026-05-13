@@ -278,7 +278,8 @@ AS $$
 $$;
 
 -- ヘルパー関数: 現在のユーザーの role
-CREATE OR REPLACE FUNCTION current_role()
+-- 注: PostgreSQLの予約語 CURRENT_ROLE と衝突するため pita_ プレフィックス
+CREATE OR REPLACE FUNCTION pita_current_role()
 RETURNS TEXT
 LANGUAGE SQL
 STABLE
@@ -340,7 +341,7 @@ CREATE POLICY org_select ON organizations
 CREATE POLICY org_update ON organizations
   FOR UPDATE USING (
     (id = current_org_id() OR parent_id = current_org_id())
-    AND current_role() IN ('owner','admin')
+    AND pita_current_role() IN ('owner','admin')
   );
 
 -- ── employees ──
@@ -368,7 +369,7 @@ CREATE POLICY emp_insert_manager ON employees
 
 CREATE POLICY emp_delete_manager ON employees
   FOR DELETE USING (
-    org_id = current_org_id() AND current_role() IN ('owner','admin')
+    org_id = current_org_id() AND pita_current_role() IN ('owner','admin')
   );
 
 -- ── employee_store_access ──
