@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   staff, daysConfig, shiftData, assignedShifts, YEAR_MONTH,
@@ -8,6 +8,9 @@ import {
   shiftVersions,
 } from '../../data/mockData'
 import { readWorkbookFromFile, extractShifts } from '../../utils/excelImport.js'
+import { useOrg } from '../../context/OrgContext'
+import * as shiftsApi from '../../api/shifts'
+import * as versionsApi from '../../api/versions'
 
 const AI_STAGES = [
   'シフトデータを解析中...',
@@ -90,6 +93,9 @@ const SUMM = [
 export default function ShiftDecision() {
   const { versionId, orgId } = useParams()
   const navigate = useNavigate()
+  const { stores } = useOrg()
+  const storeIdForSave = stores[0]?.id
+  const [saveError, setSaveError] = useState('')
   const currentVersion = shiftVersions.find(v => v.id === versionId) || { id: versionId, name: versionId || 'ver1', status: 'draft', author: '金子 光男' }
   const [selectedDay,  setSelectedDay]  = useState(1)
   const [assigned,     setAssigned]     = useState(assignedShifts)
@@ -150,15 +156,44 @@ export default function ShiftDecision() {
   const csvFileRef    = useRef(null)
   const csvAltFileRef = useRef(null)
 
-  const handleSaveDraft = () => {
+  // Load assignments from DB on mount / versionId change
+  useEffect(() => {
+    if (!versionId) return
+    let cancelled = false
+    shiftsApi.loadAssignments({ versionId })
+      .then(dbAssigned => {
+        if (cancelled || Object.keys(dbAssigned).length === 0) return
+        setAssigned(dbAssigned)
+      })
+      .catch(e => { if (!cancelled) setSaveError(e.message || '読み込みに失敗しました') })
+    return () => { cancelled = true }
+  }, [versionId])
+
+  const handleSaveDraft = async () => {
     setShiftStatus('draft')
     setSaveFlash('saved')
     setTimeout(() => setSaveFlash(''), 2000)
+    if (!storeIdForSave) return
+    try {
+      await shiftsApi.saveAssignments({ versionId, storeId: storeIdForSave, assignedByDay: assigned })
+      try { await versionsApi.updateVersion(versionId, { status: 'draft' }) } catch {}
+    } catch (e) {
+      setSaveFlash('')
+      setSaveError(e.message || '保存に失敗しました')
+    }
   }
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setShiftStatus('confirmed')
     setSaveFlash('confirmed')
     setTimeout(() => setSaveFlash(''), 2000)
+    if (!storeIdForSave) return
+    try {
+      await shiftsApi.saveAssignments({ versionId, storeId: storeIdForSave, assignedByDay: assigned })
+      try { await versionsApi.updateVersion(versionId, { status: 'confirmed' }) } catch {}
+    } catch (e) {
+      setSaveFlash('')
+      setSaveError(e.message || '確定に失敗しました')
+    }
   }
   const handlePublish = () => {
     setPublished(true)
@@ -548,6 +583,12 @@ export default function ShiftDecision() {
           <button onClick={openAI} style={{ display:'flex', alignItems:'center', gap:6, border:'none', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', color:'white', background:'#4f46e5', fontFamily:'inherit' }}>✨ AI自動配置</button>
         </div>
       </div>
+
+      {saveError && (
+        <div style={{ margin:'8px 16px 0', padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+          {saveError}
+        </div>
+      )}
 
       {/* ── Period + View mode + Print ── */}
       <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:10 }}>
