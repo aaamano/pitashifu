@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  staff, daysConfig, shiftData, assignedShifts, YEAR_MONTH,
+  staff as mockStaff, daysConfig, shiftData as mockShiftData, assignedShifts, YEAR_MONTH,
   storeConfig, staffConstraints, dailyTargets, ORDER_DISTRIBUTION,
   generateSlots, parseShiftTimes, calcRequiredStaff, skillLabels,
   decomposeShiftHours, calcDailyPay, SALES_PATTERNS, dayPatterns as initialDayPatterns,
@@ -11,6 +11,28 @@ import { readWorkbookFromFile, extractShifts } from '../../utils/excelImport.js'
 import { useOrg } from '../../context/OrgContext'
 import * as shiftsApi from '../../api/shifts'
 import * as versionsApi from '../../api/versions'
+import * as employeesApi from '../../api/employees'
+
+// assigned[day][slot]=[empId,...] と employee.id から、その日の連続スロットを
+// シフトコード文字列 ('F' / '9-18' / '13-L' / 'O-16' / 'X') に変換
+function deriveDayCode(daySlots, empId) {
+  if (!daySlots) return 'X'
+  const hours = []
+  for (const [slot, ids] of Object.entries(daySlots)) {
+    if (Array.isArray(ids) && ids.includes(empId)) {
+      const h = parseInt(slot.split(':')[0], 10)
+      if (!Number.isNaN(h)) hours.push(h)
+    }
+  }
+  if (!hours.length) return 'X'
+  hours.sort((a, b) => a - b)
+  const start = hours[0]
+  const end   = hours[hours.length - 1] + 1
+  if (start === 9 && end === 18) return 'F'
+  if (start === 9)  return `O-${end}`
+  if (end === 22)   return `${start}-L`
+  return `${start}-${end}`
+}
 
 const AI_STAGES = [
   'シフトデータを解析中...',
@@ -96,10 +118,29 @@ export default function ShiftDecision() {
   const { stores } = useOrg()
   const storeIdForSave = stores[0]?.id
   const [saveError, setSaveError] = useState('')
+  const [dbEmployees, setDbEmployees] = useState([])
   const currentVersion = shiftVersions.find(v => v.id === versionId) || { id: versionId, name: versionId || 'ver1', status: 'draft', author: '金子 光男' }
+
+  // DB社員をロード
+  useEffect(() => {
+    if (!orgId) return
+    employeesApi.listEmployees(orgId).then(setDbEmployees).catch(e => console.error('[ShiftDecision.loadEmployees]', e))
+  }, [orgId])
   const [selectedDay,  setSelectedDay]  = useState(1)
-  const [assigned,     setAssigned]     = useState(assignedShifts)
+  const [assigned,     setAssigned]     = useState({}) // 初期は空。DBから loadAssignments で復元
   const [specialTasks, setSpecialTasks] = useState(storeConfig.specialTasks)
+
+  // DBに社員がいる場合はそれを使う。なければモックにフォールバック。
+  const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
+  // shiftData は staff × 日 ごとのコード配列。DB社員ならassignedから導出、モックならモックを使用。
+  const shiftData = useMemo(() => {
+    if (!dbEmployees.length) return mockShiftData
+    const out = {}
+    for (const emp of dbEmployees) {
+      out[emp.id] = daysConfig.map(d => deriveDayCode(assigned?.[d.day], emp.id))
+    }
+    return out
+  }, [dbEmployees, assigned])
   const [showAI,        setShowAI]       = useState(false)
   const [aiPhase,       setAIPhase]      = useState('select')
   const [aiStage,       setAIStage]      = useState(0)
