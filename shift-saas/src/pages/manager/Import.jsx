@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { readWorkbookFromFile, extractStaffList, extractSalesPatterns, extractShifts } from '../../utils/excelImport'
 import * as employeesApi from '../../api/employees'
 import { loadSettings, saveSettings } from '../../api/orgSettings'
+import { findOrCreatePeriod } from '../../api/shiftRequests'
 
 // シフトコード → start_time / end_time
 function parseShiftTimes(code) {
@@ -86,7 +87,7 @@ export default function Import() {
   const executeImport = async () => {
     if (!parsed || !orgId) return
     setImporting(true); setErrMsg(''); setResult(null)
-    const r = { staff: { inserted: 0, updated: 0 }, patterns: 0, shifts: { saved: 0, skipped: 0, version: null }, errors: [] }
+    const r = { staff: { inserted: 0, updated: 0 }, patterns: 0, shifts: { saved: 0, skipped: 0, version: null }, requests: { saved: 0, periods: [] }, errors: [] }
     try {
       // 1. スタッフ
       if (doStaff && parsed.staff?.length) {
@@ -169,6 +170,62 @@ export default function Import() {
           if (insErr) throw insErr
         }
         r.shifts.saved = rows.length
+
+        // 3-4. shift_requests にも反映（シフト希望一覧に表示するため）
+        const lastDay = new Date(year, month, 0).getDate()
+        const halvesNeeded = new Set()
+        for (const sh of parsed.shifts) {
+          for (let idx = 0; idx < sh.days.length; idx++) {
+            const day = idx + 1
+            if (day > lastDay) continue
+            halvesNeeded.add(day <= 15 ? '前半' : '後半')
+          }
+        }
+        const periodByHalf = new Map()
+        for (const half of halvesNeeded) {
+          const pName = `${year}年${month}月 ${half}`
+          try {
+            const p = await findOrCreatePeriod({ storeId, periodName: pName })
+            periodByHalf.set(half, p)
+            r.requests.periods.push(p.name)
+          } catch (e) {
+            r.errors.push(`期間 ${pName} の作成に失敗: ${e.message || e}`)
+          }
+        }
+        const reqRows = []
+        const nowIso = new Date().toISOString()
+        for (const sh of parsed.shifts) {
+          const empId = nameToId.get(sh.name)
+          if (!empId) continue
+          sh.days.forEach((code, idx) => {
+            const day = idx + 1
+            if (day > lastDay) return
+            const half = day <= 15 ? '前半' : '後半'
+            const period = periodByHalf.get(half)
+            if (!period) return
+            const t = parseShiftTimes(code)
+            reqRows.push({
+              period_id:       period.id,
+              employee_id:     empId,
+              date:            `${year}-${pad(month)}-${pad(day)}`,
+              is_available:    !!t,
+              preferred_start: t ? hhmm(t.start) : null,
+              preferred_end:   t ? hhmm(t.end)   : null,
+              status:          'submitted',
+              submitted_at:    nowIso,
+              last_edited_by:  me?.id ?? null,
+              last_edited_at:  nowIso,
+            })
+          })
+        }
+        for (let i = 0; i < reqRows.length; i += 200) {
+          const chunk = reqRows.slice(i, i + 200)
+          const { error: reqErr } = await supabase
+            .from('shift_requests')
+            .upsert(chunk, { onConflict: 'period_id,employee_id,date' })
+          if (reqErr) throw reqErr
+        }
+        r.requests.saved = reqRows.length
       }
 
       setResult(r)
@@ -275,6 +332,9 @@ export default function Import() {
             <li>スタッフ: 新規 <b>{result.staff.inserted}</b>名 / 更新 <b>{result.staff.updated}</b>名</li>
             <li>売上パターン: <b>{result.patterns}</b>件をマージ保存</li>
             <li>シフト: <b>{result.shifts.saved}</b>件のシフトを「{result.shifts.version?.name}」に保存 {result.shifts.skipped ? `（${result.shifts.skipped}件スキップ）` : ''}</li>
+            {result.requests?.saved > 0 && (
+              <li>シフト希望一覧: <b>{result.requests.saved}</b>件を反映（{result.requests.periods.join(' / ')}）</li>
+            )}
           </ul>
           {result.errors?.length > 0 && (
             <details style={{ marginTop: 10 }}>
