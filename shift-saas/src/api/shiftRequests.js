@@ -127,14 +127,108 @@ export async function listAllSubmissions({ storeId }) {
       preferredEnd:   r.preferred_end,
       isAvailable:    r.is_available,
       status:         r.status,
-      note:           r.note,
-      submittedAt:    r.submitted_at,
     })
   }
   return periods.map(p => ({
-    period: { id: p.id, name: p.name, periodStart: p.period_start, periodEnd: p.period_end, status: p.status },
+    period: {
+      id: p.id, name: p.name,
+      periodStart: p.period_start, periodEnd: p.period_end, status: p.status,
+    },
     requests: byPeriod[p.id] ?? [],
   }))
+}
+
+// 期間マトリクス: 1期間の全シフトを「最終編集者」情報付きで取得
+//   返り値: { period, days: [{date, day}], shifts: { [employeeId]: { [date]: cell } } }
+export async function loadPeriodMatrix({ periodId }) {
+  if (!periodId) throw new Error('periodId is required')
+  const { data: period, error: pErr } = await supabase
+    .from('shift_periods')
+    .select('*')
+    .eq('id', periodId)
+    .maybeSingle()
+  if (pErr) { console.error('[loadPeriodMatrix.period]', pErr); throw pErr }
+  if (!period) throw new Error('期間が見つかりません')
+
+  const { data: reqs, error: rErr } = await supabase
+    .from('shift_requests')
+    .select('*, editor:employees!shift_requests_last_edited_by_fkey(id, name)')
+    .eq('period_id', periodId)
+    .order('date', { ascending: true })
+  if (rErr) { console.error('[loadPeriodMatrix.reqs]', rErr); throw rErr }
+
+  // 期間内の日付配列
+  const startDate = new Date(period.period_start + 'T00:00:00')
+  const endDate   = new Date(period.period_end + 'T00:00:00')
+  const days = []
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const ymd = d.toISOString().slice(0, 10)
+    const w   = d.getDay()
+    days.push({
+      date: ymd,
+      day:  d.getDate(),
+      dow:  ['日','月','火','水','木','金','土'][w],
+      isWeekend: w === 0 || w === 6,
+    })
+  }
+
+  // employeeId × date → cell に整形
+  const shifts = {}
+  for (const r of reqs ?? []) {
+    (shifts[r.employee_id] ||= {})[r.date] = {
+      id:             r.id,
+      isAvailable:    r.is_available,
+      preferredStart: r.preferred_start,
+      preferredEnd:   r.preferred_end,
+      status:         r.status,
+      lastEditedBy:   r.editor?.id ?? null,
+      lastEditedByName: r.editor?.name ?? null,
+      lastEditedAt:   r.last_edited_at ?? null,
+    }
+  }
+
+  return {
+    period: {
+      id: period.id, name: period.name,
+      periodStart: period.period_start, periodEnd: period.period_end, status: period.status,
+    },
+    days,
+    shifts,
+  }
+}
+
+// 1セルだけ保存 (upsert)
+//   start/end が null なら 休 (is_available=false) として保存
+export async function saveShiftCell({ periodId, employeeId, date, start, end }) {
+  if (!periodId || !employeeId || !date) throw new Error('periodId/employeeId/date は必須')
+  // 編集者 = 現在のログインユーザーの employees.id
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: me } = await supabase
+    .from('employees')
+    .select('id')
+    .eq('auth_user_id', user?.id ?? '')
+    .maybeSingle()
+
+  const isAvailable = !!(start != null && end != null)
+  const row = {
+    period_id:      periodId,
+    employee_id:    employeeId,
+    date,
+    is_available:   isAvailable,
+    preferred_start: isAvailable ? hhmm(start) : null,
+    preferred_end:   isAvailable ? hhmm(end)   : null,
+    status:         'submitted',
+    submitted_at:   new Date().toISOString(),
+    last_edited_by: me?.id ?? null,
+    last_edited_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('shift_requests')
+    .upsert(row, { onConflict: 'period_id,employee_id,date' })
+    .select()
+    .single()
+  if (error) { console.error('[saveShiftCell]', error, row); throw error }
+  return data
 }
 
 export async function listSubmissions({ storeId }) {
