@@ -1,31 +1,38 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { staff, skillLabels } from '../../data/mockData'
+import { skillLabels } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
+import { useMe } from '../../hooks/useMe'
 
-const ME = staff[0]
 const INDIGO = '#4F46E5'
 const BORDER = '#E2E8F0'
 
-const PROFILE_KEY = 'pitashif_employee_profile'
-
-function loadProfile() {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch { return null }
+// 役職コードを日本語表示にマッピング
+function roleLabel(r) {
+  switch (r) {
+    case 'owner':   return 'オーナー'
+    case 'admin':   return '管理者'
+    case 'manager': return 'マネージャー'
+    case 'staff':   return 'スタッフ'
+    default:        return r || ''
+  }
 }
-function saveProfile(p) {
-  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)) } catch {}
-}
 
-const DEFAULT = {
-  name:  ME.name,
-  role:  ME.role,
-  phone: '090-1234-5678',
-  email: 'kaneko@example.com',
-  bank:  'みずほ銀行 新宿支店 普通 1234567',
-  emergency: '090-0000-0000（緊急連絡先）',
+// useMe の me から DEFAULT 形を作る
+function buildDefault(me) {
+  if (!me) {
+    return { name: '', role: '', phone: '', email: '', bank: '', emergency: '' }
+  }
+  return {
+    name:      me.name || '',
+    role:      roleLabel(me.role),
+    phone:     me.phone || '',
+    email:     me.email || '',
+    bank:      me.bankInfo?.account ?? '',
+    emergency: typeof me.emergencyContact === 'object' && me.emergencyContact
+      ? `${me.emergencyContact.phone ?? ''}${me.emergencyContact.name ? `（${me.emergencyContact.name}）` : ''}`
+      : '',
+  }
 }
 
 const InfoRow = ({ label, value, accent }) => (
@@ -64,20 +71,38 @@ const Field = ({ label, value, onChange, multiline }) => (
   </div>
 )
 
+const PROFILE_KEY = 'pitashif_employee_profile'
+function loadProfileOverrides() {
+  try { const raw = localStorage.getItem(PROFILE_KEY); return raw ? JSON.parse(raw) : null } catch { return null }
+}
+function saveProfileOverrides(p) {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)) } catch {}
+}
+
 export default function Profile({ base: baseProp, sukima = false }) {
   const { orgId } = useParams()
   const base = baseProp ?? `/${orgId}/employee`
-  const saved = loadProfile()
-  const [profile, setProfile]   = useState(saved || DEFAULT)
+  const { me, loading } = useMe()
+  const [profile, setProfile]   = useState(() => buildDefault(null))
   const [editing, setEditing]   = useState(false)
   const [draft,   setDraft]     = useState(profile)
   const [showSaved, setShowSaved] = useState(false)
+
+  // useMe で me が更新されたら、DBデータ + localStorage上書きでprofileを構築
+  useEffect(() => {
+    const dbDefault = buildDefault(me)
+    const overrides = loadProfileOverrides() || {}
+    const merged = { ...dbDefault, ...overrides }
+    setProfile(merged)
+    if (!editing) setDraft(merged)
+  }, [me])
 
   const update = key => val => setDraft(d => ({ ...d, [key]: val }))
 
   const handleSave = () => {
     setProfile(draft)
-    saveProfile(draft)
+    // 編集可能なフィールドのみ localStorage に保存（電話/振込/緊急連絡先など）
+    saveProfileOverrides(draft)
     setEditing(false)
     setShowSaved(true)
     setTimeout(() => setShowSaved(false), 2500)
@@ -130,7 +155,7 @@ export default function Profile({ base: baseProp, sukima = false }) {
             color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 26, fontWeight: 700, marginBottom: 10,
           }}>
-            {profile.name[0]}
+            {profile.name?.[0] || '?'}
           </div>
           <div style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', marginBottom: 2 }}>{profile.name}</div>
           <div style={{ fontSize: 12, color: '#64748B', fontWeight: 500, marginBottom: 8 }}>{profile.role}</div>
