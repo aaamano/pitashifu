@@ -2,19 +2,32 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { LogoIcon } from '../../components/Logo'
 import { useAuth } from '../../context/AuthContext'
-import { isSupabaseConfigured } from '../../lib/supabase'
+import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 
 const BRAND = '#4F46E5'
 const BRAND_DEEP = '#3730A3'
 
-// 開発時のフォールバック先（実装が進むにつれて employees.org_id を引いて遷移する）
+// employees 行が未作成の場合のフォールバックorg
 const FALLBACK_ORG_ID = 'demo'
+
+// ログイン後にユーザーの org_id + role を引いて遷移先パスを決める
+async function resolveRedirectPath() {
+  const { data, error } = await supabase
+    .from('employees')
+    .select('org_id, role')
+    .maybeSingle()
+  if (error || !data) {
+    return `/${FALLBACK_ORG_ID}/manager`
+  }
+  const scope = data.role === 'staff' ? 'employee' : 'manager'
+  return `/${data.org_id}/${scope}`
+}
 
 export default function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const redirectTo = location.state?.from ?? `/${FALLBACK_ORG_ID}/manager`
+  const fromPath = location.state?.from
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,12 +39,14 @@ export default function Login() {
     setError('')
     setSubmitting(true)
     const { error: err } = await signIn(email, password)
-    setSubmitting(false)
     if (err) {
+      setSubmitting(false)
       setError(err.message)
       return
     }
-    navigate(redirectTo, { replace: true })
+    const target = fromPath ?? (await resolveRedirectPath())
+    setSubmitting(false)
+    navigate(target, { replace: true })
   }
 
   return (
