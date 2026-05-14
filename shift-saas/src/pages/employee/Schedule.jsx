@@ -287,10 +287,21 @@ export default function Schedule({ base: baseProp, sukima = false }) {
                 const dowIdx  = (firstDow + day - 1) % 7
                 const isSelected = day === selectedDay
                 const dowColor = dowIdx === 0 ? CORAL : dowIdx === 6 ? '#3b82c4' : '#0F172A'
+
+                const dateStr = `${year}-${pad(month)}-${pad(day)}`
+                const reqStatus = monthRequests[dateStr]?.status
+                const isConfirmed = reqStatus === 'confirmed' || !!shift
+                const isSubmitted = reqStatus === 'submitted'
+
+                let bg = 'white'
+                if (isSelected) bg = INDIGO
+                else if (isConfirmed) bg = '#EEF0FE'
+                else if (isSubmitted) bg = '#ECFDF5'
+
                 return (
                   <button key={idx} onClick={() => setSelectedDay(day)} style={{
                     aspectRatio: '1 / 1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    background: isSelected ? INDIGO : shift ? '#EEF0FE' : 'white',
+                    background: bg,
                     color: isSelected ? 'white' : dowColor,
                     border: isSelected ? `1px solid ${INDIGO}` : `1px solid ${BORDER}`,
                     borderRadius: 6, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', padding: 0,
