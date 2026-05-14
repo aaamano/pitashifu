@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  daysConfig, assignedShifts, YEAR_MONTH,
-  storeConfig, staffConstraints, dailyTargets, ORDER_DISTRIBUTION,
+  daysConfig as mockDaysConfig, assignedShifts, YEAR_MONTH,
+  storeConfig, staffConstraints, dailyTargets as mockDailyTargets, ORDER_DISTRIBUTION,
   generateSlots, parseShiftTimes, calcRequiredStaff, skillLabels,
   decomposeShiftHours, calcDailyPay, SALES_PATTERNS, dayPatterns as initialDayPatterns,
   shiftVersions,
@@ -162,6 +162,56 @@ export default function ShiftDecision() {
   const [editDayTask,      setEditDayTask]      = useState(null) // taskId being edited for the day
   const [dayPatternMap,    setDayPatternMap]    = useState(initialDayPatterns) // day -> pattern key
   const [half,             setHalf]             = useState('first') // 'first' | 'second'
+
+  // 期間 (年/月) は state で管理。ダッシュボード上部と同じ < year年month月 半 > UI で操作可能。
+  const today = new Date()
+  const [year,  setYear]  = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const periodLabel = `${year}年${month}月 ${half === 'first' ? '前半' : '後半'}`
+  const prevPeriod = () => {
+    if (half === 'second') { setHalf('first'); return }
+    if (month === 1) { setYear(y => y - 1); setMonth(12); setHalf('second') }
+    else { setMonth(m => m - 1); setHalf('second') }
+  }
+  const nextPeriod = () => {
+    if (half === 'first') { setHalf('second'); return }
+    if (month === 12) { setYear(y => y + 1); setMonth(1); setHalf('first') }
+    else { setMonth(m => m + 1); setHalf('first') }
+  }
+
+  // 期間に応じた日別 daysConfig を動的生成 (実際の月末日や曜日に対応)
+  const daysConfig = useMemo(() => {
+    const DOW_JP = ['日','月','火','水','木','金','土']
+    const lastDay = new Date(year, month, 0).getDate()
+    const start = half === 'first' ? 1 : 16
+    const end   = half === 'first' ? Math.min(15, lastDay) : lastDay
+    return Array.from({ length: end - start + 1 }, (_, i) => {
+      const day = start + i
+      const dowIdx = new Date(year, month - 1, day).getDay()
+      return {
+        day,
+        dow: DOW_JP[dowIdx],
+        dowIdx,
+        isWeekend: dowIdx === 0 || dowIdx === 6,
+      }
+    })
+  }, [year, month, half])
+
+  // dailyTargets を期間に合わせて投影。mock の値を当該日に当てはめる。
+  const dailyTargets = useMemo(() => {
+    return daysConfig.map(d => {
+      const mock = mockDailyTargets.find(m => m.day === d.day)
+      return {
+        ...d,
+        sales:      mock?.sales      ?? 0,
+        customers:  mock?.customers  ?? 0,
+        avgSpend:   mock?.avgSpend   ?? 3000,
+        orders:     mock?.orders     ?? 0,
+        laborCost:  mock?.laborCost  ?? 0,
+        salesPattern: mock?.salesPattern ?? 'weekday1',
+      }
+    })
+  }, [daysConfig])
   const [viewMode,         setViewMode]         = useState('day')   // 'day' | 'week' | 'half' | 'month' | 'calendar'
   const [showCalendar,     setShowCalendar]     = useState(false)
   const [showDisplayPanel, setShowDisplayPanel] = useState(true)
@@ -489,7 +539,7 @@ export default function ShiftDecision() {
         <button onclick="window.close()">閉じる</button>
       </div>
       <div class="head">
-        <div class="title">${YEAR_MONTH} 1日(${daysConfig[0]?.dow || ''})〜${daysConfig.length}日(${daysConfig[daysConfig.length-1]?.dow || ''})のシフト ${currentVersion.name ? '「' + currentVersion.name + '」' : ''}</div>
+        <div class="title">${periodLabel} ${daysConfig[0]?.day}日(${daysConfig[0]?.dow || ''})〜${daysConfig[daysConfig.length-1]?.day}日(${daysConfig[daysConfig.length-1]?.dow || ''})のシフト ${currentVersion.name ? '「' + currentVersion.name + '」' : ''}</div>
         <div class="store">${stores[0]?.name ?? ''}</div>
       </div>
       <table>
@@ -741,7 +791,7 @@ export default function ShiftDecision() {
     <div style={{ padding:'20px 24px 16px', background:'#f0f5f9', display:'flex', flexDirection:'column', gap:12 }}>
 
       {/* ── Header ── */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
         <div>
           <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
             <button
@@ -764,6 +814,17 @@ export default function ShiftDecision() {
             </span>
             {published && <span style={{ fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:10, background:'#dbeafe', color:'#1d4ed8' }}>📢 展開済み</span>}
           </div>
+        </div>
+
+        {/* 期間ナビゲーター — ダッシュボード上部と同じデザイン */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, flex:1, justifyContent:'center' }}>
+          <button onClick={prevPeriod} aria-label="前の期間"
+            style={{ width:36, height:36, borderRadius:8, border:'1px solid #cbd5e1', background:'white', fontSize:18, fontWeight:700, color:'#3730a3', cursor:'pointer', fontFamily:'inherit' }}>‹</button>
+          <div style={{ minWidth:180, textAlign:'center', fontSize:20, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em' }}>
+            {periodLabel}
+          </div>
+          <button onClick={nextPeriod} aria-label="次の期間"
+            style={{ width:36, height:36, borderRadius:8, border:'1px solid #cbd5e1', background:'white', fontSize:18, fontWeight:700, color:'#3730a3', cursor:'pointer', fontFamily:'inherit' }}>›</button>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
