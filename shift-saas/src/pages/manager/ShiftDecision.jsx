@@ -63,6 +63,7 @@ const DEFAULT_AI_WEIGHTS = {
   incompatibility:   15,
   targetEarnings:     8,
   lateToEarly:       12,
+  wage:               0,
 }
 function runAIForDays(days, slots, staffList, constraints, targets, specialTasks, shiftData, aiWeights = DEFAULT_AI_WEIGHTS) {
   const W = { ...DEFAULT_AI_WEIGHTS, ...(aiWeights || {}) }
@@ -92,6 +93,11 @@ function runAIForDays(days, slots, staffList, constraints, targets, specialTasks
         if (day > 1 && slotDec <= EARLY_THRESHOLD) {
           const prevTimes = parseShiftTimes(shiftData[s.id]?.[day - 2])
           if (prevTimes && prevTimes.end >= LATE_THRESHOLD) score -= W.lateToEarly
+        }
+        // Wage penalty: 時給が高いほど減点（基準=1000円、50円ごとに W ポイント減点）
+        if (W.wage > 0) {
+          const wage = s.wage ?? 1050
+          score -= Math.max(0, (wage - 1000) / 50) * W.wage
         }
         return { s, score }
       })

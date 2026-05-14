@@ -7,16 +7,17 @@ import { loadSettings, saveSettings } from '../../api/orgSettings'
 export const AI_CONFIG_DEFAULTS = {
   mode: 'balanced',
   weights: {
-    retentionPriority: 10, // (11-priority) * 10 のベース係数
+    retentionPriority: 10, // (11-priority) * W のベース係数
     incompatibility:   15, // 同スロットに相性NGがいた場合の severity あたり減点
     targetEarnings:     8, // 目標月収が設定済みなら加点
     lateToEarly:       12, // 前日深夜→翌早番のペナルティ
+    wage:               0, // 時給が高いほど減点（時給1000円基準、50円差で W ポイント）
   },
 }
 export const AI_CONFIG_PRESETS = {
-  balanced:    { retentionPriority: 10, incompatibility: 15, targetEarnings:  8, lateToEarly: 12 },
-  cost_min:    { retentionPriority:  5, incompatibility: 10, targetEarnings:  0, lateToEarly:  8 },
-  satisfaction:{ retentionPriority: 15, incompatibility: 20, targetEarnings: 15, lateToEarly: 15 },
+  balanced:    { retentionPriority: 10, incompatibility: 15, targetEarnings:  8, lateToEarly: 12, wage:  0 },
+  cost_min:    { retentionPriority:  5, incompatibility: 10, targetEarnings:  0, lateToEarly:  8, wage: 12 },
+  satisfaction:{ retentionPriority: 15, incompatibility: 20, targetEarnings: 15, lateToEarly: 15, wage:  0 },
 }
 const AI_MODE_LABELS = {
   balanced:     'バランス（推奨）',
@@ -28,12 +29,14 @@ const AI_WEIGHT_LABELS = {
   incompatibility:   '相性NGの減点強さ',
   targetEarnings:    '目標月収ありの加点',
   lateToEarly:       '深夜→早番のペナルティ',
+  wage:              '時給単価の重み',
 }
 const AI_WEIGHT_HINTS = {
   retentionPriority: '高い人ほど優先的に配置（高=長期定着スタッフ重視）',
   incompatibility:   '相性NGが同時に入ると減点。高=徹底回避 / 低=多少同時OK',
   targetEarnings:    '目標月収を設定したスタッフを優先（高=シフト数を埋めやすく）',
   lateToEarly:       '前日深夜 → 翌早番の配置を避ける度合い',
+  wage:              '時給の低いスタッフを優先（高=人件費を抑える / 0=時給を無視）',
 }
 
 // Hardcoded color lookup (avoids Tailwind purge issues with dynamic strings)
