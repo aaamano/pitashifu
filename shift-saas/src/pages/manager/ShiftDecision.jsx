@@ -58,7 +58,14 @@ function getTasksForSlotMin(slotMin, tasks) {
 const LATE_THRESHOLD  = 21  // 前日この時刻以降終了 = 遅番
 const EARLY_THRESHOLD = 9   // 当日この時刻以前開始 = 早番
 
-function runAIForDays(days, slots, staffList, constraints, targets, specialTasks, shiftData) {
+const DEFAULT_AI_WEIGHTS = {
+  retentionPriority: 10,
+  incompatibility:   15,
+  targetEarnings:     8,
+  lateToEarly:       12,
+}
+function runAIForDays(days, slots, staffList, constraints, targets, specialTasks, shiftData, aiWeights = DEFAULT_AI_WEIGHTS) {
+  const W = { ...DEFAULT_AI_WEIGHTS, ...(aiWeights || {}) }
   const result = {}
   let avoidedConflicts = 0
   for (const day of days) {
@@ -75,16 +82,16 @@ function runAIForDays(days, slots, staffList, constraints, targets, specialTasks
         return times && slotDec >= times.start && slotDec < times.end
       })
       const scored = available.map(s => {
-        let score = (11 - (constraints[s.id]?.retentionPriority ?? 5)) * 10
+        let score = (11 - (constraints[s.id]?.retentionPriority ?? 5)) * W.retentionPriority
         const alreadyIn = dayAssign[slot] || []
         for (const { staffId, severity } of (constraints[s.id]?.incompatible ?? [])) {
-          if (alreadyIn.includes(staffId)) { score -= severity * 15; avoidedConflicts++ }
+          if (alreadyIn.includes(staffId)) { score -= severity * W.incompatibility; avoidedConflicts++ }
         }
-        if ((constraints[s.id]?.targetEarnings ?? 0) > 0) score += 8
+        if ((constraints[s.id]?.targetEarnings ?? 0) > 0) score += W.targetEarnings
         // Low-priority penalty: avoid early shift after late-night shift
         if (day > 1 && slotDec <= EARLY_THRESHOLD) {
           const prevTimes = parseShiftTimes(shiftData[s.id]?.[day - 2])
-          if (prevTimes && prevTimes.end >= LATE_THRESHOLD) score -= 12
+          if (prevTimes && prevTimes.end >= LATE_THRESHOLD) score -= W.lateToEarly
         }
         return { s, score }
       })
@@ -616,7 +623,8 @@ export default function ShiftDecision() {
     try {
       for (let i = 0; i < AI_STAGES.length; i++) { setAIStage(i); await new Promise(r => setTimeout(r, 700)) }
       const days = [...aiDays].sort((a, b) => a - b)
-      const { result, avoidedConflicts, staffWithTargets, totalAssigned } = runAIForDays(days, slots, staff, staffConstraints, dailyTargets, specialTasks, shiftData)
+      const aiWeights = stores?.[0]?.settings?.aiConfig?.weights
+      const { result, avoidedConflicts, staffWithTargets, totalAssigned } = runAIForDays(days, slots, staff, staffConstraints, dailyTargets, specialTasks, shiftData, aiWeights)
       const merged = { ...assigned, ...result }
       setAssigned(merged)
       setAIResult({ days, avoidedConflicts, staffWithTargets, totalAssigned })
