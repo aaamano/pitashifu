@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { LogoIcon } from '../../components/Logo'
 import { useAuth } from '../../context/AuthContext'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
+import * as invitationsApi from '../../api/invitations'
 
 const BRAND = '#4F46E5'
 const BRAND_DEEP = '#3730A3'
@@ -10,11 +11,41 @@ const BRAND_DEEP = '#3730A3'
 // employees 行が未作成の場合のフォールバックorg
 const FALLBACK_ORG_ID = 'demo'
 const PENDING_BOOTSTRAP_KEY = 'pitashif_pending_bootstrap'
+const PENDING_INVITE_KEY    = 'pitashif_pending_invite'
 
 // ログイン後にユーザーの org_id + role を引いて遷移先パスを決める
-// employees 行が無い場合: pendingBootstrap or メールから会社名を推定して bootstrap を実行
-async function resolveRedirectPath() {
-  // 1. 自分の employees 行を auth.uid() で確認
+// 優先順:
+//   1. URL/localStorage に招待 token あり → accept_invitation 実行
+//   2. 既存の employees 行があれば、その org に遷移
+//   3. pendingBootstrap or メールから会社名を推定して bootstrap を実行
+//   4. フォールバック
+async function resolveRedirectPath(explicitInviteToken) {
+  // 1. 招待 token を最優先で処理
+  let inviteToken = explicitInviteToken
+  if (!inviteToken) {
+    try {
+      const raw = localStorage.getItem(PENDING_INVITE_KEY)
+      if (raw) {
+        const p = JSON.parse(raw)
+        if (p?.token) inviteToken = p.token
+      }
+    } catch {}
+  }
+  if (inviteToken) {
+    try {
+      const result = await invitationsApi.acceptInvitation(inviteToken)
+      localStorage.removeItem(PENDING_INVITE_KEY)
+      if (result?.org_id) {
+        const scope = result.role === 'staff' ? 'employee' : 'manager'
+        return `/${result.org_id}/${scope}`
+      }
+    } catch (e) {
+      console.error('[login.accept_invitation]', e)
+      // 失敗してもログイン自体は完了させる。下のフローに継続
+    }
+  }
+
+  // 2. 既存の employees 行を確認
   const { data: { user } } = await supabase.auth.getUser()
   if (user?.id) {
     const { data } = await supabase
@@ -28,7 +59,7 @@ async function resolveRedirectPath() {
     }
   }
 
-  // 2. 未bootstrap → pendingBootstrap or メールアドレスから会社名を生成して bootstrap
+  // 3. 未bootstrap → pendingBootstrap or メールアドレスから会社名を生成して bootstrap
   let companyName = '新規会社'
   let userName    = null
   try {
@@ -38,7 +69,6 @@ async function resolveRedirectPath() {
       if (p.companyName) companyName = p.companyName
       if (p.userName)    userName    = p.userName
     } else {
-      // メールアドレスのローカル部分を会社名のフォールバックに
       const { data: sess } = await supabase.auth.getSession()
       const email = sess?.session?.user?.email
       if (email) {
@@ -64,7 +94,7 @@ async function resolveRedirectPath() {
     console.error('[login.bootstrap.exception]', e)
   }
 
-  // 3. 最終フォールバック
+  // 4. 最終フォールバック
   return `/${FALLBACK_ORG_ID}/manager`
 }
 
@@ -73,6 +103,8 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const fromPath = location.state?.from
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('invite') || null
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -89,7 +121,8 @@ export default function Login() {
       setError(err.message)
       return
     }
-    const target = fromPath ?? (await resolveRedirectPath())
+    // 招待 token を最優先で処理。URL に invite が無くても localStorage の保存値も見る
+    const target = (inviteToken ? await resolveRedirectPath(inviteToken) : (fromPath ?? await resolveRedirectPath()))
     setSubmitting(false)
     navigate(target, { replace: true })
   }
