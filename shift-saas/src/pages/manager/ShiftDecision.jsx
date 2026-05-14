@@ -9,6 +9,7 @@ import {
 } from '../../data/mockData'
 import { readWorkbookFromFile, extractShifts } from '../../utils/excelImport.js'
 import { useOrg } from '../../context/OrgContext'
+import { supabase } from '../../lib/supabase'
 import * as shiftsApi from '../../api/shifts'
 import * as versionsApi from '../../api/versions'
 import * as employeesApi from '../../api/employees'
@@ -198,15 +199,56 @@ export default function ShiftDecision() {
   const csvAltFileRef = useRef(null)
 
   // Load assignments from DB on mount / versionId change
+  // - 既存の shifts (確定/下書きで入っている割当) を優先
+  // - 空の場合は同期間の shift_requests (希望) を seed として使う
   useEffect(() => {
     if (!versionId) return
     let cancelled = false
-    shiftsApi.loadAssignments({ versionId })
-      .then(dbAssigned => {
-        if (cancelled || Object.keys(dbAssigned).length === 0) return
-        setAssigned(dbAssigned)
-      })
-      .catch(e => { if (!cancelled) setSaveError(e.message || '読み込みに失敗しました') })
+    ;(async () => {
+      try {
+        const dbAssigned = await shiftsApi.loadAssignments({ versionId })
+        if (cancelled) return
+        if (Object.keys(dbAssigned).length > 0) {
+          setAssigned(dbAssigned)
+          return
+        }
+        // version の period_id を取得
+        const { data: ver } = await supabase
+          .from('shift_versions')
+          .select('period_id')
+          .eq('id', versionId)
+          .maybeSingle()
+        if (cancelled || !ver?.period_id) return
+        // その期間の shift_requests を取得
+        const { data: reqs } = await supabase
+          .from('shift_requests')
+          .select('employee_id, date, preferred_start, preferred_end, is_available')
+          .eq('period_id', ver.period_id)
+        if (cancelled || !reqs?.length) return
+        // shift_requests を assigned[day][slot]=[empId,...] に変換
+        const seeded = {}
+        for (const r of reqs) {
+          if (!r.is_available || !r.preferred_start || !r.preferred_end) continue
+          const day = parseInt(r.date.slice(8, 10), 10)
+          const sH  = parseInt(r.preferred_start.slice(0, 2), 10) + parseInt(r.preferred_start.slice(3, 5), 10) / 60
+          const eH  = parseInt(r.preferred_end.slice(0, 2),   10) + parseInt(r.preferred_end.slice(3, 5),   10) / 60
+          for (let h = sH; h < eH - 0.001; h += 0.25) {
+            const hh = Math.floor(h + 0.0001)
+            const mm = Math.round(((h + 0.0001) - hh) * 60)
+            const slot = `${hh}:${String(mm).padStart(2, '0')}`
+            ;(seeded[day] ||= {})[slot] ||= []
+            if (!seeded[day][slot].includes(r.employee_id)) {
+              seeded[day][slot].push(r.employee_id)
+            }
+          }
+        }
+        if (Object.keys(seeded).length > 0) {
+          setAssigned(seeded)
+        }
+      } catch (e) {
+        if (!cancelled) setSaveError(e.message || '読み込みに失敗しました')
+      }
+    })()
     return () => { cancelled = true }
   }, [versionId])
 
