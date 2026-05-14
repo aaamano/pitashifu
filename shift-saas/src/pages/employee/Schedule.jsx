@@ -194,9 +194,23 @@ export default function Schedule({ base: baseProp, sukima = false }) {
     )
   }
 
-  const workDays  = myShiftsDisp.filter(c => c && c !== 'X').length
-  const workHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
-  const estPay    = workHours * (meDisp.wage ?? 1050)
+  // シフト確定（shifts テーブル）
+  const confirmedDays  = myShiftsDisp.filter(c => c && c !== 'X').length
+  const confirmedHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
+  const confirmedPay   = confirmedHours * (meDisp.wage ?? 1050)
+
+  // シフト希望（shift_requests テーブル）
+  const requestEntries = Object.values(monthRequests).filter(
+    r => r?.is_available && r.preferred_start && r.preferred_end,
+  )
+  const requestHours = requestEntries.reduce((sum, r) => {
+    const s = timeStrToH(r.preferred_start)
+    const e = timeStrToH(r.preferred_end)
+    if (s == null || e == null) return sum
+    return sum + Math.max(0, e - s - 1)
+  }, 0)
+  const requestDays = requestEntries.length
+  const requestPay  = requestHours * (meDisp.wage ?? 1050)
 
   const selCode  = myShiftsDisp[selectedDay - 1]
   const selShift = parseCode(selCode)
@@ -257,16 +271,23 @@ export default function Schedule({ base: baseProp, sukima = false }) {
         {/* Monthly summary */}
         <div style={{ display: 'flex', gap: 8, padding: '12px 12px 0', flexShrink: 0 }}>
           {[
-            { label: '出勤日数', value: `${workDays}日` },
-            { label: '勤務時間', value: `${workHours}h` },
-            { label: '想定収入', value: `¥${estPay.toLocaleString()}` },
-          ].map(({ label, value }) => (
+            { label: '出勤日数', request: `${requestDays}日`,   confirmed: `${confirmedDays}日` },
+            { label: '勤務時間', request: `${requestHours}h`,   confirmed: `${confirmedHours}h` },
+            { label: '想定収入', request: `¥${requestPay.toLocaleString()}`, confirmed: `¥${confirmedPay.toLocaleString()}` },
+          ].map(({ label, request, confirmed }) => (
             <div key={label} style={{
               flex: 1, background: 'white', border: `1px solid ${BORDER}`,
-              borderRadius: 10, padding: '9px 6px', textAlign: 'center',
+              borderRadius: 10, padding: '8px 6px', textAlign: 'center',
             }}>
-              <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 2 }}>{label}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{value}</div>
+              <div style={{ fontSize: 9, color: '#94A3B8', marginBottom: 4 }}>{label}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <span style={{ fontSize: 8, fontWeight: 700, color: '#10B981', background: '#ECFDF5', padding: '1px 4px', borderRadius: 4, flexShrink: 0 }}>希望</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>{request}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 3 }}>
+                <span style={{ fontSize: 8, fontWeight: 700, color: INDIGO, background: '#EEF0FE', padding: '1px 4px', borderRadius: 4, flexShrink: 0 }}>確定</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#0F172A' }}>{confirmed}</span>
+              </div>
             </div>
           ))}
         </div>
