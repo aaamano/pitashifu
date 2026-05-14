@@ -30,11 +30,8 @@ export default function NotFound() {
         </div>
 
         <div style={{ display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap' }}>
-          <Link to="/" style={{ padding:'10px 20px', borderRadius:10, background:'#4F46E5', color:'white', fontSize:13, fontWeight:700, textDecoration:'none' }}>
-            TOPに戻る
-          </Link>
-          <Link to="/login" style={{ padding:'10px 20px', borderRadius:10, background:'white', color:'#4F46E5', fontSize:13, fontWeight:700, textDecoration:'none', border:'1px solid #E2E8F0' }}>
-            ログイン
+          <Link to="/login" style={{ padding:'10px 20px', borderRadius:10, background:'#4F46E5', color:'white', fontSize:13, fontWeight:700, textDecoration:'none' }}>
+            ログイン画面へ
           </Link>
         </div>
       </div>
