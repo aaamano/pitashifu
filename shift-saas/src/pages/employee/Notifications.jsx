@@ -20,7 +20,12 @@ export default function EmployeeNotifications({ base: baseProp, sukima = false }
     let cancelled = false
     setLoading(true)
     notificationsApi.listNotifications()
-      .then(rows => { if (!cancelled) setItems(rows ?? []) })
+      .then(rows => {
+        if (cancelled) return
+        // スタッフ向けに表示すべき type のみ抽出
+        const filtered = (rows ?? []).filter(n => notificationsApi.isStaffVisible(n.type))
+        setItems(filtered)
+      })
       .catch(e => console.error('[employee.Notifications.load]', e))
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
