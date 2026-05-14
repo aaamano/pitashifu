@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { storeConfig as initialConfig } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadSettings, saveSettings } from '../../api/orgSettings'
+import { supabase } from '../../lib/supabase'
 
 // AI 自動配置の重み・モード設定
 export const AI_CONFIG_DEFAULTS = {
@@ -62,6 +63,65 @@ export { TASK_COLORS }
 export default function StoreSettings() {
   const { orgId, stores } = useOrg()
   const storeId = stores[0]?.id
+  const noStore = !storeId  // 店舗未作成 (会社 org のみ)
+
+  // 初回店舗作成フォーム
+  const [newStoreName, setNewStoreName] = useState('')
+  const [creatingStore, setCreatingStore] = useState(false)
+  const [createErr, setCreateErr] = useState('')
+
+  const createFirstStore = async () => {
+    if (!orgId) { setCreateErr('orgId 未取得'); return }
+    if (!newStoreName.trim()) { setCreateErr('店舗名を入力してください'); return }
+    setCreatingStore(true); setCreateErr('')
+    try {
+      // 1. 自分の auth.users → employees.id を取得
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('未ログイン')
+      const { data: meRow } = await supabase
+        .from('employees').select('id').eq('auth_user_id', user.id).maybeSingle()
+
+      // 2. 店舗 id を会社 id + 連番から生成（衝突避け）
+      const baseSuffix = `${orgId}-store`
+      let suffix = 1
+      let storeIdCandidate = `${baseSuffix}-${suffix}`
+      // 既存衝突チェック
+      while (true) {
+        const { data } = await supabase
+          .from('organizations').select('id').eq('id', storeIdCandidate).maybeSingle()
+        if (!data) break
+        suffix++
+        storeIdCandidate = `${baseSuffix}-${suffix}`
+      }
+      // 3. 店舗 org を作成
+      const { error: insErr } = await supabase.from('organizations').insert({
+        id:        storeIdCandidate,
+        name:      newStoreName.trim(),
+        type:      'store',
+        parent_id: orgId,
+        plan:      'free',
+        settings:  {
+          openHour: 9, closeHour: 23,
+          slotInterval: 15, avgProductivity: 8,
+        },
+      })
+      if (insErr) throw insErr
+      // 4. 自分にこの店舗のアクセス権を付与
+      if (meRow?.id) {
+        await supabase.from('employee_store_access').insert({
+          employee_id: meRow.id,
+          store_id:    storeIdCandidate,
+        })
+      }
+      // 5. 再読込で OrgContext を更新
+      window.location.reload()
+    } catch (e) {
+      console.error('[StoreSettings.createFirstStore]', e)
+      setCreateErr(e.message || '店舗の作成に失敗しました')
+    } finally {
+      setCreatingStore(false)
+    }
+  }
 
   // 初期 specialTasks は空（mockData の「搬入」「掃除」の flash 防止）
   const [config,    setConfig]    = useState({ ...initialConfig, specialTasks: [] })
@@ -193,6 +253,49 @@ export default function StoreSettings() {
       {errMsg && (
         <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
           {errMsg}
+        </div>
+      )}
+
+      {/* 初回店舗作成（店舗が未作成の場合のみ） */}
+      {noStore && (
+        <div className="mgr-card" style={{
+          padding:24, marginBottom:20, border:'2px solid #C7D2FE',
+          background:'linear-gradient(135deg, #EEF0FE 0%, #E0F2FE 100%)',
+        }}>
+          <h2 style={{ fontSize:15, fontWeight:700, color:'#3730A3', margin:'0 0 6px' }}>
+            🏪 はじめての店舗を作成しましょう
+          </h2>
+          <p style={{ fontSize:12, color:'#475569', margin:'0 0 14px', lineHeight:1.6 }}>
+            まだ店舗が登録されていません。シフト計画・目標設定・スタッフ管理を始めるには、最初の店舗を作成してください。
+          </p>
+          <div style={{ display:'flex', gap:8, alignItems:'flex-end', flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:240 }}>
+              <label className="mgr-label">店舗名</label>
+              <input
+                type="text"
+                value={newStoreName}
+                onChange={e => setNewStoreName(e.target.value)}
+                placeholder="例: 新宿三丁目店"
+                className="mgr-input"
+                disabled={creatingStore}
+              />
+            </div>
+            <button
+              onClick={createFirstStore}
+              disabled={creatingStore || !newStoreName.trim()}
+              className="mgr-btn-primary"
+            >
+              {creatingStore ? '作成中…' : '店舗を作成'}
+            </button>
+          </div>
+          {createErr && (
+            <div style={{ marginTop:10, padding:'8px 12px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:12 }}>
+              {createErr}
+            </div>
+          )}
+          <div style={{ marginTop:12, fontSize:11, color:'#64748b' }}>
+            ※ 作成後は、下の「基本設定」で営業時間・人員配置・特別業務などを調整できます。複数店舗は将来の機能で追加可能になります。
+          </div>
         </div>
       )}
 
