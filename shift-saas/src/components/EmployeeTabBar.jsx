@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
-import { listNotifications } from '../api/notifications'
+import { listNotifications, isStaffVisible } from '../api/notifications'
 
 const C    = '#4F46E5'
 const GRAY = '#9CA3AF'
@@ -67,7 +67,11 @@ export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
   useEffect(() => {
     let cancelled = false
     listNotifications()
-      .then(rows => { if (!cancelled) setUnread((rows ?? []).filter(n => !n.read).length) })
+      .then(rows => {
+        if (cancelled) return
+        // スタッフビューでは staff 向けの通知タイプのみ未読カウント
+        setUnread((rows ?? []).filter(n => !n.read && isStaffVisible(n.type)).length)
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])

@@ -7,6 +7,14 @@ import { supabase } from '../lib/supabase'
 //   body  → sub
 //   created_at → time（相対表示）
 
+// スタッフ (staff ロール) のスタッフビューに表示すべき通知タイプ
+// マネージャー向けの運用系通知 (submit / alert / warning) はスタッフには見せない
+export const STAFF_VISIBLE_TYPES = new Set(['reminder', 'confirmed', 'info'])
+
+export function isStaffVisible(type) {
+  return STAFF_VISIBLE_TYPES.has(type)
+}
+
 function relativeTime(iso) {
   if (!iso) return ''
   const diff = Date.now() - new Date(iso).getTime()
