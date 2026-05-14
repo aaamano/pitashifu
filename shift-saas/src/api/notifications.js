@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 
-// notifications テーブル CRUD
+// notifications テーブル CRUD + notification_reads でユーザーごとの既読管理
 // RLSにより自分宛(recipient_id=自分) または org全体宛(recipient_id=NULL) のみ参照可
 // DB列 → UI:
 //   title → text
@@ -33,29 +33,60 @@ function toUi(row) {
   }
 }
 
+// 現在ログイン中ユーザーの employees.id を取得（既読操作で必要）
+async function currentEmployeeId() {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase
+    .from('employees')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .maybeSingle()
+  return data?.id ?? null
+}
+
 export async function listNotifications() {
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) { console.error('[notifications.list]', error); throw error }
-  return (data ?? []).map(toUi)
+  // 通知本体 + 自分の既読履歴を並列取得
+  const [{ data: notifs, error: e1 }, { data: reads, error: e2 }] = await Promise.all([
+    supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+    supabase.from('notification_reads').select('notification_id'),
+  ])
+  if (e1) { console.error('[notifications.list]', e1); throw e1 }
+  if (e2) { console.error('[notifications.list.reads]', e2); throw e2 }
+  const readIds = new Set((reads ?? []).map(r => r.notification_id))
+  return (notifs ?? []).map(row => ({
+    ...toUi(row),
+    read: row.read || readIds.has(row.id),
+  }))
 }
 
 export async function markRead(id) {
+  if (!id) return
+  const empId = await currentEmployeeId()
+  if (!empId) return
   const { error } = await supabase
-    .from('notifications')
-    .update({ read: true })
-    .eq('id', id)
+    .from('notification_reads')
+    .upsert({
+      notification_id: id,
+      employee_id:     empId,
+      read_at:         new Date().toISOString(),
+    }, { onConflict: 'notification_id,employee_id' })
   if (error) { console.error('[notifications.markRead]', error); throw error }
 }
 
 export async function markAllRead(ids) {
   if (!ids?.length) return
+  const empId = await currentEmployeeId()
+  if (!empId) return
+  const nowIso = new Date().toISOString()
+  const rows = ids.map(id => ({
+    notification_id: id,
+    employee_id:     empId,
+    read_at:         nowIso,
+  }))
   const { error } = await supabase
-    .from('notifications')
-    .update({ read: true })
-    .in('id', ids)
+    .from('notification_reads')
+    .upsert(rows, { onConflict: 'notification_id,employee_id' })
   if (error) { console.error('[notifications.markAllRead]', error); throw error }
 }
 

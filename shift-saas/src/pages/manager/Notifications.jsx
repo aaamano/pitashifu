@@ -63,11 +63,17 @@ export default function ManagerNotifications() {
   const markAllRead = async () => {
     const ids = items.filter(n => !n.read).map(n => n.id).filter(id => typeof id === 'string')
     setItems(prev => prev.map(n => ({ ...n, read: true })))
-    if (ids.length) { try { await notificationsApi.markAllRead(ids) } catch {} }
+    if (ids.length) {
+      try { await notificationsApi.markAllRead(ids) }
+      catch (e) { console.error('[markAllRead]', e) }
+    }
   }
   const markRead = async (id) => {
     setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
-    if (typeof id === 'string') { try { await notificationsApi.markRead(id) } catch {} }
+    if (typeof id === 'string') {
+      try { await notificationsApi.markRead(id) }
+      catch (e) { console.error('[markRead]', e) }
+    }
   }
   const unread = items.filter(n => !n.read).length
 
