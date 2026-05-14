@@ -541,7 +541,10 @@ export default function ShiftDecision() {
     return dec >= times.start && dec < times.end
   }
   const toggleCell = (staffId, slot) => {
-    if (!isWorking(staffId, slot)) return
+    // シフトコードが入っている場合は勤務時間内のみクリック可
+    // 空の場合 (='X') はどのスロットも配置可能（その時間が勤務時間として確定する）
+    const code = shiftData[staffId]?.[selectedDay - 1]
+    if (code && code !== 'X' && !isWorking(staffId, slot)) return
     setAssigned(prev => {
       const dd = { ...(prev[selectedDay] || {}) }
       const list = [...(dd[slot] || [])]
@@ -600,7 +603,12 @@ export default function ShiftDecision() {
     return cnt > 0 ? Math.round(slotSalesKen(slot) * 1000 / cnt) : 0
   }
 
-  const workingStaff = staff.filter(s => getShiftSummary(s.id) !== null)
+  // 当日にシフト持ちのスタッフを抽出。誰もいない場合は全員を表示して
+  // マネージャーが配置作業を始められるようにする
+  const workingStaff = (() => {
+    const withShift = staff.filter(s => getShiftSummary(s.id) !== null)
+    return withShift.length > 0 ? withShift : staff
+  })()
 
   const openAI = () => { setAIDays(new Set(daysConfig.map(d => d.day))); setAIResult(null); setAIPhase('select'); setShowAI(true) }
   const runAI = async () => {
