@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { staff as mockStaff, daysConfig, YEAR_MONTH, shiftSubmissions as initialSubmissions } from '../../data/mockData'
+import { daysConfig, YEAR_MONTH } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { useOrg } from '../../context/OrgContext'
 import { useMe } from '../../hooks/useMe'
@@ -52,8 +52,8 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
   const { stores } = useOrg()
   const storeId = stores[0]?.id
   const { me } = useMe()
-  const meDisp = me ?? mockStaff[0]
-  const [submissions, setSubmissions] = useState(initialSubmissions)
+  const meDisp = me
+  const [submissions, setSubmissions] = useState([])
   const [mode, setMode]               = useState('list')
   const [errMsg, setErrMsg]           = useState('')
 
@@ -61,7 +61,7 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
     if (!storeId) return
     let cancelled = false
     listSubmissions({ storeId })
-      .then(rows => { if (!cancelled && rows.length) setSubmissions(rows) })
+      .then(rows => { if (!cancelled) setSubmissions(rows ?? []) })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
   }, [storeId])
@@ -300,7 +300,7 @@ export default function ShiftSubmit({ base: baseProp, sukima = false }) {
   return (
     <>
       <div className="pita-phone-header">
-        <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{meDisp.name[0]}</div>
+        <div style={{ width:32, height:32, borderRadius:'50%', background:'#5B67F8', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, flexShrink:0 }}>{meDisp?.name?.[0] ?? ''}</div>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:14, fontWeight:700, color:'var(--pita-text)' }}>シフト管理</div>
           <div style={{ fontSize:10, color:'var(--pita-muted)', marginTop:1 }}>{YEAR_MONTH}</div>

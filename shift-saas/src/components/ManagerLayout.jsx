@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useParams } from 'react-router-dom'
-import { YEAR_MONTH, allStores, managerNotifications } from '../data/mockData'
+import { YEAR_MONTH } from '../data/mockData'
+import { useOrg } from '../context/OrgContext'
+import { listNotifications } from '../api/notifications'
 import { LogoIcon } from './Logo'
 import {
   IconDashboard, IconTarget, IconShift, IconStaff,
@@ -17,8 +19,6 @@ const NAV_ITEMS = [
   { suffix: '/settings',      label: '店舗設定',       Icon: IconStore,     end: false },
   { suffix: '/notifications', label: '通知',           Icon: IconBell,      end: false, badge: true },
 ]
-
-const UNREAD = managerNotifications.filter(n => !n.read).length
 
 const SIDEBAR_GRAD   = 'linear-gradient(180deg, #1E1B4B 0%, #231C58 60%, #2A2466 100%)'
 const SIDEBAR_ACTIVE = '#4F46E5'
@@ -37,13 +37,27 @@ export default function ManagerLayout() {
   const { orgId } = useParams()
   const base = `/${orgId}/manager`
   const NAV = NAV_ITEMS.map(item => ({ ...item, to: base + item.suffix }))
+  const { stores } = useOrg()
 
   const [showDrop,    setShowDrop]    = useState(false)
-  const [activeStore, setActiveStore] = useState(allStores[0])
+  const [activeStore, setActiveStore] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [unread,      setUnread]      = useState(0)
   const [isMobile,    setIsMobile]    = useState(
     () => typeof window !== 'undefined' && window.innerWidth <= 768
   )
+
+  useEffect(() => {
+    if (stores?.length && !activeStore) setActiveStore(stores[0])
+  }, [stores, activeStore])
+
+  useEffect(() => {
+    let cancelled = false
+    listNotifications()
+      .then(rows => { if (!cancelled) setUnread((rows ?? []).filter(n => !n.read).length) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [orgId])
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
@@ -123,7 +137,7 @@ export default function ManagerLayout() {
             >
               <span style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <span style={{ width:6, height:6, borderRadius:'50%', background:'#10B981', flexShrink:0 }}/>
-                {activeStore.name}
+                {activeStore?.name ?? '店舗'}
               </span>
               <span style={{ color:SIDEBAR_TEXT, fontSize:9 }}>▼</span>
             </button>
@@ -133,25 +147,22 @@ export default function ManagerLayout() {
                 background:'white', borderRadius:10, boxShadow:'0 12px 28px rgba(0,0,0,0.22)',
                 zIndex:60, overflow:'hidden',
               }}>
-                {allStores.map(store => (
+                {(stores ?? []).map(store => (
                   <button
                     key={store.id}
-                    onClick={() => { if (store.status === 'active') { setActiveStore(store); setShowDrop(false) } }}
+                    onClick={() => { setActiveStore(store); setShowDrop(false) }}
                     style={{
                       width:'100%', textAlign:'left', padding:'9px 12px', fontSize:12,
-                      fontWeight: store.status === 'active' ? 600 : 400,
-                      color: store.status === 'active' ? '#0F172A' : '#94A3B8',
-                      background: activeStore.id === store.id ? 'var(--pita-indigo-soft)' : 'white',
-                      cursor: store.status === 'active' ? 'pointer' : 'not-allowed',
+                      fontWeight: 600,
+                      color: '#0F172A',
+                      background: activeStore?.id === store.id ? 'var(--pita-indigo-soft)' : 'white',
+                      cursor: 'pointer',
                       border:'none', fontFamily:'inherit',
                       display:'flex', alignItems:'center', justifyContent:'space-between',
                     }}
                   >
                     <span>{store.name}</span>
-                    {store.status === 'soon' && (
-                      <span style={{ fontSize:10, background:'#F1F5F9', color:'#94A3B8', padding:'1px 6px', borderRadius:4 }}>準備中</span>
-                    )}
-                    {activeStore.id === store.id && store.status === 'active' && (
+                    {activeStore?.id === store.id && (
                       <span style={{ color:'var(--pita-indigo)', fontSize:11, fontWeight:700 }}>✓</span>
                     )}
                   </button>
@@ -183,12 +194,12 @@ export default function ManagerLayout() {
                 <Icon size={18} />
               </span>
               <span style={{ flex:1 }}>{label}</span>
-              {badge && UNREAD > 0 && (
+              {badge && unread > 0 && (
                 <span style={{
                   background:'var(--pita-coral)', color:'white', fontSize:10, fontWeight:800,
                   padding:'1px 6px', borderRadius:10, minWidth:18, textAlign:'center', lineHeight:'15px',
                 }}>
-                  {UNREAD}
+                  {unread}
                 </span>
               )}
             </NavLink>
@@ -231,9 +242,9 @@ export default function ManagerLayout() {
               <LogoIcon size={20} />
             </div>
             <span style={{ fontSize:16, fontWeight:800, color:'#0F172A' }}>ピタシフ</span>
-            {UNREAD > 0 && (
+            {unread > 0 && (
               <span style={{ marginLeft:'auto', background:'var(--pita-coral)', color:'white', fontSize:11, fontWeight:800, padding:'3px 10px', borderRadius:10 }}>
-                通知 {UNREAD}
+                通知 {unread}
               </span>
             )}
           </div>
