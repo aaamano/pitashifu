@@ -1,8 +1,8 @@
+import { useState, useEffect } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
-import { employeeNotifications } from '../data/mockData'
+import * as notificationsApi from '../api/notifications'
 
-const UNREAD = employeeNotifications.filter(n => !n.read).length
 const C    = '#4F46E5'
 const GRAY = '#9CA3AF'
 
@@ -63,6 +63,15 @@ export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
   const settingsSukima = storeSettings?.sukimaEnabled ?? companySettings?.sukimaEnabled
   const sukima = sukimaProp ?? (settingsSukima !== false)
 
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    notificationsApi.listNotifications()
+      .then(rows => { if (!cancelled) setUnread((rows ?? []).filter(n => !n.read).length) })
+      .catch(e => console.error('[EmployeeTabBar.unread]', e))
+    return () => { cancelled = true }
+  }, [pathname])
+
   const getActive = () => {
     if (pathname.includes('/submit'))        return 'submit'
     if (pathname.includes('/payroll'))       return 'payroll'
@@ -89,7 +98,7 @@ export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
     }}>
       {tabs.map(({ id, to, label, Icon }) => {
         const on = active === id
-        const hasUnread = id === 'notifications' && UNREAD > 0
+        const hasUnread = id === 'notifications' && unread > 0
         return (
           <Link key={id} to={to} style={{
             flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
@@ -98,7 +107,18 @@ export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
           }}>
             <div style={{ position:'relative' }}>
               <Icon on={on} />
-              {hasUnread && <span style={{ position:'absolute', top:-1, right:-2, width:7, height:7, background:'#EF4444', borderRadius:'50%', border:'1.5px solid white' }} />}
+              {hasUnread && (
+                <span style={{
+                  position:'absolute', top:-6, right:-8,
+                  minWidth:14, height:14, padding:'0 4px',
+                  background:'#EF4444', color:'white',
+                  fontSize:9, fontWeight:800, lineHeight:'14px',
+                  borderRadius:7, border:'1.5px solid white',
+                  textAlign:'center',
+                }}>
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
             </div>
             <span style={{ fontSize:8, fontWeight: on ? 700 : 400, color: on ? C : GRAY, letterSpacing:'-0.01em', whiteSpace:'nowrap' }}>{label}</span>
           </Link>

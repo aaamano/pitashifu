@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet, useParams } from 'react-router-dom'
-import { YEAR_MONTH, allStores, managerNotifications } from '../data/mockData'
+import { NavLink, Outlet, useParams, useLocation } from 'react-router-dom'
+import { YEAR_MONTH, allStores } from '../data/mockData'
+import * as notificationsApi from '../api/notifications'
 import { LogoIcon } from './Logo'
 import {
   IconDashboard, IconTarget, IconShift, IconStaff,
@@ -18,8 +19,6 @@ const NAV_ITEMS = [
   { suffix: '/notifications', label: '通知',           Icon: IconBell,      end: false, badge: true },
 ]
 
-const UNREAD = managerNotifications.filter(n => !n.read).length
-
 const SIDEBAR_GRAD   = 'linear-gradient(180deg, #1E1B4B 0%, #231C58 60%, #2A2466 100%)'
 const SIDEBAR_ACTIVE = '#4F46E5'
 const SIDEBAR_TEXT   = '#C7D2FE'
@@ -35,12 +34,14 @@ const HamburgerIcon = () => (
 
 export default function ManagerLayout() {
   const { orgId } = useParams()
+  const { pathname } = useLocation()
   const base = `/${orgId}/manager`
   const NAV = NAV_ITEMS.map(item => ({ ...item, to: base + item.suffix }))
 
   const [showDrop,    setShowDrop]    = useState(false)
   const [activeStore, setActiveStore] = useState(allStores[0])
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [unread,      setUnread]      = useState(0)
   const [isMobile,    setIsMobile]    = useState(
     () => typeof window !== 'undefined' && window.innerWidth <= 768
   )
@@ -52,6 +53,14 @@ export default function ManagerLayout() {
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    notificationsApi.listNotifications()
+      .then(rows => { if (!cancelled) setUnread((rows ?? []).filter(n => !n.read).length) })
+      .catch(e => console.error('[ManagerLayout.unread]', e))
+    return () => { cancelled = true }
+  }, [pathname])
 
   const closeSidebar = () => setSidebarOpen(false)
 
@@ -183,12 +192,12 @@ export default function ManagerLayout() {
                 <Icon size={18} />
               </span>
               <span style={{ flex:1 }}>{label}</span>
-              {badge && UNREAD > 0 && (
+              {badge && unread > 0 && (
                 <span style={{
                   background:'var(--pita-coral)', color:'white', fontSize:10, fontWeight:800,
                   padding:'1px 6px', borderRadius:10, minWidth:18, textAlign:'center', lineHeight:'15px',
                 }}>
-                  {UNREAD}
+                  {unread}
                 </span>
               )}
             </NavLink>
