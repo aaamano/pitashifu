@@ -140,7 +140,6 @@ export default function Payroll() {
     <div className="mgr-page">
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{monthLabel}</div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>支出管理</h1>
           <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>シフト確定済みデータから算出。月・前半/後半/全月で集計を切り替えできます。</p>
         </div>

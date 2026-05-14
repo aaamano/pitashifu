@@ -8,6 +8,8 @@ import NotFound from './pages/NotFound'
 import Login from './pages/auth/Login'
 import Signup from './pages/auth/Signup'
 import AcceptInvite from './pages/auth/AcceptInvite'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
 
 import ManagerLayout from './components/ManagerLayout'
 import EmployeeLayout from './components/EmployeeLayout'
@@ -20,6 +22,7 @@ import Members from './pages/manager/Members'
 import MemberDetail from './pages/manager/MemberDetail'
 import StoreSettings from './pages/manager/StoreSettings'
 import ManagerNotifications from './pages/manager/Notifications'
+import AccountSettings from './pages/manager/AccountSettings'
 import Payroll from './pages/manager/Payroll'
 import Import from './pages/manager/Import'
 import Schedule from './pages/employee/Schedule'
@@ -87,10 +90,12 @@ export default function App() {
         <Routes>
           {/* Public */}
           <Route path="/"        element={<IndexRedirect />} />
-          <Route path="/login"          element={<Login />} />
-          <Route path="/signup"         element={<Signup />} />
-          <Route path="/invite/:token"  element={<AcceptInvite />} />
-          <Route path="/404"            element={<NotFound />} />
+          <Route path="/login"            element={<Login />} />
+          <Route path="/signup"           element={<Signup />} />
+          <Route path="/invite/:token"    element={<AcceptInvite />} />
+          <Route path="/forgot-password"  element={<ForgotPassword />} />
+          <Route path="/reset-password"   element={<ResetPassword />} />
+          <Route path="/404"              element={<NotFound />} />
 
           {/* Tenant scope: /:orgId/* */}
           <Route
@@ -114,6 +119,7 @@ export default function App() {
             <Route path="payroll"       element={<Payroll />} />
             <Route path="import"        element={<Import />} />
             <Route path="notifications" element={<ManagerNotifications />} />
+            <Route path="account"       element={<AccountSettings />} />
           </Route>
 
           <Route

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { storeConfig as initialConfig, YEAR_MONTH } from '../../data/mockData'
+import { storeConfig as initialConfig } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadSettings, saveSettings } from '../../api/orgSettings'
 
@@ -182,7 +182,6 @@ export default function StoreSettings() {
     <div className="mgr-page" style={{ maxWidth: 860 }}>
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24 }}>
         <div>
-          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{YEAR_MONTH}</div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>店舗設定</h1>
           <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>各店舗ごとに個別設定できます</p>
         </div>

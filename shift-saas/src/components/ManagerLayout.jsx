@@ -6,7 +6,7 @@ import { listNotifications } from '../api/notifications'
 import { LogoIcon } from './Logo'
 import {
   IconDashboard, IconTarget, IconShift, IconStaff,
-  IconPayroll, IconStore, IconBell, IconImport, IconChat,
+  IconPayroll, IconStore, IconBell, IconImport, IconChat, IconAccount,
 } from './Icons'
 
 const NAV_ITEMS = [
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { suffix: '/payroll',       label: '支出管理',       Icon: IconPayroll,   end: false },
   { suffix: '/settings',      label: '店舗設定',       Icon: IconStore,     end: false },
   { suffix: '/notifications', label: '通知',           Icon: IconBell,      end: false, badge: true },
+  { suffix: '/account',       label: 'アカウント',     Icon: IconAccount,   end: false },
 ]
 
 const SIDEBAR_GRAD   = 'linear-gradient(180deg, #1E1B4B 0%, #231C58 60%, #2A2466 100%)'
@@ -208,10 +209,7 @@ export default function ManagerLayout() {
 
         {/* Footer */}
         <div style={{ padding:'14px 18px', borderTop:`1px solid ${SIDEBAR_BORDER}`, position:'relative' }}>
-          <a href="/" style={{ fontSize:12, color:'#A5B4FC', textDecoration:'none', display:'flex', alignItems:'center', gap:6 }}>
-            ← TOP に戻る
-          </a>
-          <div style={{ fontSize:10, color:'#6366F1', marginTop:6, opacity:0.7 }}>v1.1 — ピタシフ Build {__BUILD_TS__}</div>
+          <div style={{ fontSize:10, color:'#6366F1', opacity:0.7 }}>v1.1 — ピタシフ Build {__BUILD_TS__}</div>
         </div>
       </aside>
 

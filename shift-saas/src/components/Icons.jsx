@@ -5,6 +5,11 @@ const wrap = (paths, size = 18, stroke = 1.8) => (
   </svg>
 )
 
+export const IconAccount = ({ size }) => wrap(<>
+  <circle cx="12" cy="8" r="4"/>
+  <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+</>, size)
+
 export const IconDashboard = ({ size }) => wrap(<>
   <rect x="3" y="3" width="7" height="9" rx="1.5"/>
   <rect x="14" y="3" width="7" height="5" rx="1.5"/>
