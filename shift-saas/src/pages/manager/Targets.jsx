@@ -520,7 +520,7 @@ export default function Targets() {
 
   // 前月の同曜日平均（プレースホルダ用、最低限の準備）— 現状未配線だが将来利用
   // eslint-disable-next-line no-unused-vars
-  const _prevMonthAvgByDow = useMemo(() => {
+  const prevMonthAvgByDow = useMemo(() => {
     const sums = {}, counts = {}
     for (const r of prevMonthTargets) {
       const dowIdx = (() => {
@@ -534,6 +534,65 @@ export default function Targets() {
     for (const k of Object.keys(sums)) out[k] = Math.round(sums[k] / counts[k])
     return out
   }, [prevMonthTargets])
+
+  // ── 一括入力モーダル state ──
+  const [showBulkModal, setShowBulkModal] = useState(null) // null | 'weekday' | 'prev' | 'range'
+  // 曜日パターン: { dowGroup: [day index list], value }
+  // グループ: 平日(月-木)=1, 金=5, 土=6, 日=0
+  const [weekdayFill, setWeekdayFill] = useState({ weekday: '', friday: '', saturday: '', sunday: '' })
+  const [rangeFill,   setRangeFill]   = useState({ from: 1, to: 15, field: 'sales', value: '' })
+
+  // 曜日グループパターンを allTargets に適用（売上のみ。客単価/客数は別途）
+  const applyWeekdayPattern = () => {
+    const map = {
+      weekday: ['1','2','3','4'].map(Number),  // 月-木
+      friday:  [5],
+      saturday:[6],
+      sunday:  [0],
+    }
+    setAllTargets(prev => prev.map(d => {
+      const dowIdx = new Date(year, month - 1, d.day).getDay()
+      for (const [g, dows] of Object.entries(map)) {
+        if (dows.includes(dowIdx)) {
+          const v = parseInt(weekdayFill[g], 10)
+          if (Number.isFinite(v) && v > 0) {
+            // 客数・客単価・注文数は売上値に対する比率で同時推定（任意）
+            const customers = d.avgSpend > 0 ? Math.round(v * 1000 / d.avgSpend) : Math.round(v / 3)
+            const orders    = Math.round(customers * 1.5)
+            return { ...d, sales: v, customers, orders }
+          }
+        }
+      }
+      return d
+    }))
+    setShowBulkModal(null)
+  }
+
+  // 前月の同曜日平均で埋める
+  const applyPrevMonthCopy = () => {
+    setAllTargets(prev => prev.map(d => {
+      const dowIdx = new Date(year, month - 1, d.day).getDay()
+      const v = prevMonthAvgByDow[dowIdx]
+      if (Number.isFinite(v) && v > 0) {
+        const customers = d.avgSpend > 0 ? Math.round(v * 1000 / d.avgSpend) : Math.round(v / 3)
+        const orders    = Math.round(customers * 1.5)
+        return { ...d, sales: v, customers, orders }
+      }
+      return d
+    }))
+    setShowBulkModal(null)
+  }
+
+  // 範囲塗り（指定範囲・項目に同じ値を入れる）
+  const applyRangeFill = () => {
+    const v = Number(rangeFill.value)
+    if (!Number.isFinite(v)) { setShowBulkModal(null); return }
+    setAllTargets(prev => prev.map(d => {
+      if (d.day < rangeFill.from || d.day > rangeFill.to) return d
+      return { ...d, [rangeFill.field]: v }
+    }))
+    setShowBulkModal(null)
+  }
 
   const chartMeta = {
     sales:     { label: '売上(千円)', color: '#818cf8', getValue: d => d.sales },
@@ -670,6 +729,37 @@ export default function Targets() {
             </>
           )}
         </div>
+      </div>
+
+      {/* 一括入力ツールバー（編集を楽にするための補助ボタン群） */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+        <span style={{ fontSize:12, color:'#64748b', fontWeight:600 }}>一括入力:</span>
+        <button onClick={() => setShowBulkModal('weekday')}
+          style={{ padding:'5px 12px', borderRadius:18, fontSize:12, fontWeight:600,
+                   background:'#EEF0FE', color:'#3730A3', border:'1px solid #C7D2FE',
+                   cursor:'pointer', fontFamily:'inherit' }}>
+          📅 曜日パターンで埋める
+        </button>
+        <button onClick={() => setShowBulkModal('prev')}
+          disabled={Object.keys(prevMonthAvgByDow).length === 0}
+          style={{ padding:'5px 12px', borderRadius:18, fontSize:12, fontWeight:600,
+                   background: Object.keys(prevMonthAvgByDow).length === 0 ? '#F1F5F9' : '#ECFDF5',
+                   color: Object.keys(prevMonthAvgByDow).length === 0 ? '#94A3B8' : '#065F46',
+                   border: `1px solid ${Object.keys(prevMonthAvgByDow).length === 0 ? '#E2E8F0' : '#A7F3D0'}`,
+                   cursor: Object.keys(prevMonthAvgByDow).length === 0 ? 'not-allowed' : 'pointer', fontFamily:'inherit' }}>
+          📋 前月の同曜日平均で埋める
+        </button>
+        <button onClick={() => setShowBulkModal('range')}
+          style={{ padding:'5px 12px', borderRadius:18, fontSize:12, fontWeight:600,
+                   background:'#FEF3C7', color:'#92400E', border:'1px solid #FDE68A',
+                   cursor:'pointer', fontFamily:'inherit' }}>
+          🎯 範囲を指定して塗る
+        </button>
+        <span style={{ fontSize:10, color:'#94a3b8', marginLeft:'auto' }}>
+          {Object.keys(prevMonthAvgByDow).length > 0
+            ? `前月データあり (${Object.keys(prevMonthAvgByDow).length}曜日分)`
+            : '前月データなし'}
+        </span>
       </div>
 
       {/* アクションバー: CSV / 保存（編集テーブルの直上） */}
@@ -1084,6 +1174,120 @@ export default function Targets() {
                 cursor: pendingPatternCsvFile ? 'pointer' : 'not-allowed', fontFamily:'inherit',
               }}>アップロードを実行</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 一括入力モーダル ── */}
+      {showBulkModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={() => setShowBulkModal(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:14, width:'100%', maxWidth:520, boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+
+            {showBulkModal === 'weekday' && (
+              <>
+                <div style={{ padding:'18px 22px', borderBottom:'1px solid #E2E8F0' }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:'#0F172A' }}>📅 曜日パターンで一括入力</div>
+                  <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>各曜日グループに売上目標 (千円) を入力すると、該当する全日に展開されます。空欄の曜日はそのまま保持。</div>
+                </div>
+                <div style={{ padding:'18px 22px', display:'flex', flexDirection:'column', gap:12 }}>
+                  {[
+                    { k:'weekday',  l:'平日 (月〜木)', placeholder:'例: 400' },
+                    { k:'friday',   l:'金曜',          placeholder:'例: 500' },
+                    { k:'saturday', l:'土曜',          placeholder:'例: 700' },
+                    { k:'sunday',   l:'日祝',          placeholder:'例: 600' },
+                  ].map(({ k, l, placeholder }) => (
+                    <div key={k} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <label style={{ flex:'0 0 110px', fontSize:13, fontWeight:600, color:'#475569' }}>{l}</label>
+                      <input type="number" className="mgr-input" placeholder={placeholder}
+                        value={weekdayFill[k]}
+                        onChange={e => setWeekdayFill(p => ({ ...p, [k]: e.target.value }))} />
+                      <span style={{ fontSize:11, color:'#94a3b8' }}>千円</span>
+                    </div>
+                  ))}
+                  <div style={{ fontSize:11, color:'#64748b', marginTop:4 }}>
+                    💡 客数・注文数は売上値から客単価・推定値で自動計算されます。
+                  </div>
+                </div>
+                <div style={{ padding:'14px 22px', borderTop:'1px solid #E2E8F0', display:'flex', justifyContent:'flex-end', gap:8 }}>
+                  <button onClick={() => setShowBulkModal(null)} className="mgr-btn-secondary">キャンセル</button>
+                  <button onClick={applyWeekdayPattern} className="mgr-btn-primary">適用</button>
+                </div>
+              </>
+            )}
+
+            {showBulkModal === 'prev' && (
+              <>
+                <div style={{ padding:'18px 22px', borderBottom:'1px solid #E2E8F0' }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:'#0F172A' }}>📋 前月の同曜日平均で埋める</div>
+                  <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>前月の daily_targets から曜日別の平均を計算し、当月の対応する曜日に一括反映します。</div>
+                </div>
+                <div style={{ padding:'18px 22px' }}>
+                  <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:8, padding:'12px 14px', fontSize:12 }}>
+                    <div style={{ fontWeight:600, color:'#0F172A', marginBottom:6 }}>前月の曜日平均 (千円)</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6 }}>
+                      {[0,1,2,3,4,5,6].map(i => (
+                        <div key={i} style={{ textAlign:'center', fontSize:11 }}>
+                          <div style={{ color: i === 0 ? '#CC0066' : i === 6 ? '#3b82c4' : '#475569', fontWeight:600 }}>
+                            {['日','月','火','水','木','金','土'][i]}
+                          </div>
+                          <div style={{ marginTop:2, color:'#0F172A', fontWeight:700 }}>
+                            {prevMonthAvgByDow[i] ? `${prevMonthAvgByDow[i].toLocaleString()}` : '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:11, color:'#64748b', marginTop:10 }}>
+                    上記の値が当月の同曜日全てに反映されます。空欄の曜日 (—) は対象外。
+                  </div>
+                </div>
+                <div style={{ padding:'14px 22px', borderTop:'1px solid #E2E8F0', display:'flex', justifyContent:'flex-end', gap:8 }}>
+                  <button onClick={() => setShowBulkModal(null)} className="mgr-btn-secondary">キャンセル</button>
+                  <button onClick={applyPrevMonthCopy} className="mgr-btn-primary">適用</button>
+                </div>
+              </>
+            )}
+
+            {showBulkModal === 'range' && (
+              <>
+                <div style={{ padding:'18px 22px', borderBottom:'1px solid #E2E8F0' }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:'#0F172A' }}>🎯 範囲を指定して塗る</div>
+                  <div style={{ fontSize:12, color:'#64748b', marginTop:3 }}>連続する日にちに同じ値を一括設定します。</div>
+                </div>
+                <div style={{ padding:'18px 22px', display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                    <label style={{ fontSize:13, fontWeight:600, color:'#475569' }}>項目</label>
+                    <select className="mgr-input" value={rangeFill.field}
+                      onChange={e => setRangeFill(p => ({ ...p, field: e.target.value }))}>
+                      <option value="sales">売上目標 (千円)</option>
+                      <option value="customers">客数目標 (名)</option>
+                      <option value="avgSpend">客単価 (円)</option>
+                      <option value="orders">注文数 (件)</option>
+                      <option value="laborCost">人件費目標 (千円)</option>
+                    </select>
+                  </div>
+                  <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                    <label style={{ fontSize:13, fontWeight:600, color:'#475569' }}>範囲</label>
+                    <input type="number" min={1} max={allTargets.length} className="mgr-input" style={{ width:80 }}
+                      value={rangeFill.from} onChange={e => setRangeFill(p => ({ ...p, from: Number(e.target.value) }))} />
+                    <span>日 〜</span>
+                    <input type="number" min={1} max={allTargets.length} className="mgr-input" style={{ width:80 }}
+                      value={rangeFill.to} onChange={e => setRangeFill(p => ({ ...p, to: Number(e.target.value) }))} />
+                    <span>日</span>
+                  </div>
+                  <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                    <label style={{ fontSize:13, fontWeight:600, color:'#475569' }}>値</label>
+                    <input type="number" className="mgr-input"
+                      value={rangeFill.value} onChange={e => setRangeFill(p => ({ ...p, value: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={{ padding:'14px 22px', borderTop:'1px solid #E2E8F0', display:'flex', justifyContent:'flex-end', gap:8 }}>
+                  <button onClick={() => setShowBulkModal(null)} className="mgr-btn-secondary">キャンセル</button>
+                  <button onClick={applyRangeFill} className="mgr-btn-primary">適用</button>
+                </div>
+              </>
+            )}
+
           </div>
         </div>
       )}
