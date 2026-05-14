@@ -136,6 +136,8 @@ export default function StoreSettings() {
   const [editSkill, setEditSkill] = useState(null)
   const [sukimaEnabled, setSukimaEnabled] = useState(true) // 会社レベル: スキマバイト機能のon/off
   const [aiConfig,      setAiConfig]      = useState(AI_CONFIG_DEFAULTS)
+  // 人件比率の目標帯（min〜max を「範囲内」とみなす）
+  const [laborBand,     setLaborBand]     = useState({ min: 22, max: 32 })
 
   useEffect(() => {
     if (!storeId || !orgId) return
@@ -166,6 +168,11 @@ export default function StoreSettings() {
           }
         }
         if (typeof companyS?.sukimaEnabled === 'boolean') setSukimaEnabled(companyS.sukimaEnabled)
+        // 店舗レベルの laborRatioBand を読み込み（無ければ会社、それも無ければデフォルト）
+        const band = storeS?.laborRatioBand ?? companyS?.laborRatioBand
+        if (band && Number.isFinite(Number(band.min)) && Number.isFinite(Number(band.max))) {
+          setLaborBand({ min: Number(band.min), max: Number(band.max) })
+        }
       })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
@@ -198,9 +205,12 @@ export default function StoreSettings() {
       breakRules: config.breakRules, specialTasks: config.specialTasks,
       skillLabels, address,
       aiConfig,
+      laborRatioBand: { min: Number(laborBand.min), max: Number(laborBand.max) },
     }
     try {
-      await saveSettings(storeId, storeSettings)
+      // 既存設定とマージして他のキー（salesPatterns 等）を保護
+      const storeExisting = (await loadSettings(storeId)) || {}
+      await saveSettings(storeId, { ...storeExisting, ...storeSettings })
       const companyExisting = (await loadSettings(orgId)) || {}
       await saveSettings(orgId, { ...companyExisting, sukimaEnabled })
       setSaved(true); setTimeout(() => setSaved(false), 2000)
@@ -484,6 +494,48 @@ export default function StoreSettings() {
               特別業務が未設定です。「+ 追加」から登録してください。
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ── 人件比率の目標帯（店舗単位） ── */}
+      <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>
+        <div style={{ marginBottom:14 }}>
+          <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>人件比率の目標帯</h2>
+          <p style={{ fontSize:11, color:'#64748b', marginTop:4, marginBottom:0 }}>
+            目標計画ページの人件比率ゲージで「範囲内 (緑帯)」と判定する % の上下限を設定します。下限未満は「抑えすぎ」、上限+5% までは「警戒」、それ以上は「超過」と表示。
+          </p>
+        </div>
+        <div style={{ display:'flex', gap:14, alignItems:'flex-end', flexWrap:'wrap' }}>
+          <div>
+            <label className="mgr-label">下限 (%)</label>
+            <input type="number" min={0} max={50} step={0.5}
+              value={laborBand.min}
+              onChange={e => setLaborBand(b => ({ ...b, min: e.target.value }))}
+              className="mgr-input" style={{ width:110 }} />
+          </div>
+          <div style={{ paddingBottom:10, color:'#94a3b8' }}>〜</div>
+          <div>
+            <label className="mgr-label">上限 (%)</label>
+            <input type="number" min={0} max={50} step={0.5}
+              value={laborBand.max}
+              onChange={e => setLaborBand(b => ({ ...b, max: e.target.value }))}
+              className="mgr-input" style={{ width:110 }} />
+          </div>
+          <div style={{ paddingBottom:10, fontSize:11, color:'#64748b' }}>
+            プリセット:
+            {[
+              { l:'飲食 (22〜32%)', v:{ min:22, max:32 } },
+              { l:'小売 (12〜18%)', v:{ min:12, max:18 } },
+              { l:'サービス業 (28〜38%)', v:{ min:28, max:38 } },
+            ].map(p => (
+              <button key={p.l} type="button" onClick={() => setLaborBand(p.v)}
+                style={{ marginLeft:6, padding:'2px 8px', borderRadius:10, fontSize:10,
+                         background:'#F1F5F9', color:'#475569', border:'1px solid #E2E8F0',
+                         cursor:'pointer', fontFamily:'inherit' }}>
+                {p.l}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
