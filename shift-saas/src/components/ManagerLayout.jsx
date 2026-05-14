@@ -111,7 +111,7 @@ export default function ManagerLayout() {
             </div>
             <div style={{ display:'flex', flexDirection:'column', lineHeight:1.1, flex:1 }}>
               <span style={{ fontSize:16, fontWeight:800, color:'white', letterSpacing:'0.01em' }}>ピタシフ</span>
-              <span style={{ fontSize:9, fontWeight:500, color:'#A5B4FC', letterSpacing:'0.08em', marginTop:2 }}>MANAGER PORTAL</span>
+              <span style={{ fontSize:10, fontWeight:600, color:'#A5B4FC', letterSpacing:'0.04em', marginTop:2 }}>マネージャービュー</span>
             </div>
             {isMobile && (
               <button
@@ -205,6 +205,22 @@ export default function ManagerLayout() {
               )}
             </NavLink>
           ))}
+
+          {/* ビュー切替リンク（アカウントの下） */}
+          <NavLink
+            to={`/${orgId}/employee`}
+            onClick={isMobile ? closeSidebar : undefined}
+            style={{
+              display:'flex', alignItems:'center', gap:11,
+              padding:'11px 12px', borderRadius:9, marginTop:6,
+              fontSize:12, fontWeight:500,
+              color: SIDEBAR_TEXT, background: 'rgba(255,255,255,0.04)',
+              textDecoration:'none', border:'1px dashed rgba(255,255,255,0.16)',
+            }}
+          >
+            <span style={{ display:'inline-flex', width:18, height:18, alignItems:'center', justifyContent:'center', fontSize:14 }}>↗</span>
+            <span style={{ flex:1 }}>スタッフビューへ切替</span>
+          </NavLink>
         </nav>
 
         {/* Footer */}
