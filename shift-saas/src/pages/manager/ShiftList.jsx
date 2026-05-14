@@ -162,10 +162,10 @@ export default function ShiftList() {
     return [...names].sort((a, b) => sortKey(b) - sortKey(a))
   }, [versions])
 
-  // 通達ポップアップを開く時、デフォルト選択
-  const openPublishModal = () => {
+  // 通達ポップアップを開く時、対象期間を指定（指定なしならデフォルト）
+  const openPublishModal = (periodName) => {
     setPublishMsg('')
-    setPublishPeriod(confirmedPeriodNames[0] ?? '')
+    setPublishPeriod(periodName ?? confirmedPeriodNames[0] ?? '')
     setShowPublish(true)
   }
 
@@ -204,25 +204,11 @@ export default function ShiftList() {
 
   return (
     <div className="mgr-page">
-      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>シフト管理</h1>
-          <p style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-            半月ごとにシフト希望の確認・シフト確定作業ができます。
-          </p>
-        </div>
-        <button onClick={openPublishModal}
-          disabled={confirmedPeriodNames.length === 0}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '8px 14px', borderRadius: 8, border: 'none',
-            background: confirmedPeriodNames.length === 0 ? '#fcd34d' : '#f59e0b',
-            color: 'white', fontSize: 12, fontWeight: 600,
-            cursor: confirmedPeriodNames.length === 0 ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit', opacity: confirmedPeriodNames.length === 0 ? 0.7 : 1,
-          }}
-          title={confirmedPeriodNames.length === 0 ? '確定済みのシフトがありません' : ''}
-        >📢 確定シフト通達</button>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>シフト管理</h1>
+        <p style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+          半月ごとにシフト希望の確認・シフト確定作業ができます。
+        </p>
       </div>
 
       {errMsg && (
@@ -262,6 +248,21 @@ export default function ShiftList() {
                   style={tabBtnStyle(isOpen && openMode === 'decide')}>シフト確定作業</button>
                 <button onClick={() => handleCardClick(cardId, 'confirmed')}
                   style={tabBtnStyle(isOpen && openMode === 'confirmed')}>確定済みの確認</button>
+                <button
+                  onClick={() => openPublishModal(period.name)}
+                  disabled={confirmedVs.length === 0}
+                  title={confirmedVs.length === 0 ? '確定済みのシフトがありません' : ''}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '7px 12px', borderRadius: 8, border: 'none',
+                    background: confirmedVs.length === 0 ? '#fde68a' : '#f59e0b',
+                    color: confirmedVs.length === 0 ? '#a16207' : 'white',
+                    fontSize: 12, fontWeight: 600,
+                    cursor: confirmedVs.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: confirmedVs.length === 0 ? 0.55 : 1,
+                    fontFamily: 'inherit',
+                  }}
+                >📢 確定シフト通達</button>
               </div>
             </div>
 

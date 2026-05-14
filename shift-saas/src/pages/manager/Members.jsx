@@ -1114,17 +1114,19 @@ export default function Members() {
                 {form.id && (
                   <button
                     onClick={async () => {
-                      if (!confirm(`${form.lastName || form.name || 'このスタッフ'} を退職させますか？`)) return
+                      if (!confirm(`${form.lastName || form.name || 'このスタッフ'} を削除しますか？\nこの操作は取り消せません。`)) return
                       try {
                         await employeesApi.deleteEmployee(form.id)
                         setMembers(prev => prev.filter(m => m.id !== form.id))
                         setShowModal(false)
                       } catch (e) {
+                        console.error('[Members.delete]', e)
                         setErrMsg(e.message || '削除に失敗しました')
+                        setShowModal(false)
                       }
                     }}
                     className="text-xs text-red-600 hover:underline"
-                  >スタッフを退職させる</button>
+                  >スタッフを削除する</button>
                 )}
                 <span className="text-xs text-gray-400">* 必須項目</span>
               </div>
