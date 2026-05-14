@@ -490,7 +490,7 @@ export default function ShiftDecision() {
       </div>
       <div class="head">
         <div class="title">${YEAR_MONTH} 1日(${daysConfig[0]?.dow || ''})〜${daysConfig.length}日(${daysConfig[daysConfig.length-1]?.dow || ''})のシフト ${currentVersion.name ? '「' + currentVersion.name + '」' : ''}</div>
-        <div class="store">Segafredo ZANETTI 新宿三丁目店</div>
+        <div class="store">${stores[0]?.name ?? ''}</div>
       </div>
       <table>
         <thead><tr><th style="border:1px solid #cbd5e1;padding:6px 10px;font-size:11px;background:#e2e8f0;color:#1e293b;text-align:left;">スタッフ</th>${dateHdr}</tr></thead>
