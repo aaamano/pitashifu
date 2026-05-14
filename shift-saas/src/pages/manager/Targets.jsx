@@ -105,12 +105,14 @@ function SVGBarLineChart({ targets }) {
 }
 
 // 人件比率ゲージ（半円メーター + 信号機）
+// 人件比率を「横バー＋緑帯＋現在地マーカー」で表現する
 function LaborRatioGauge({ ratio, band }) {
-  // ratio: % (0..50くらい)
-  // band: { min, max }  緑帯
   const v = Number.isFinite(ratio) ? ratio : 0
-  const clamped = Math.max(0, Math.min(LABOR_BAND_HARD_MAX, v))
-  const pct = clamped / LABOR_BAND_HARD_MAX
+  const max = LABOR_BAND_HARD_MAX
+  const clamped = Math.max(0, Math.min(max, v))
+  const pct = (clamped / max) * 100
+  const bandLeftPct  = (band.min / max) * 100
+  const bandRightPct = (band.max / max) * 100
 
   const status =
     v < band.min ? 'low'
@@ -119,72 +121,63 @@ function LaborRatioGauge({ ratio, band }) {
     : 'over'
 
   const colorByStatus = {
-    low:  '#3b82f6', // 青  — 投下不足
-    ok:   '#10b981', // 緑  — 範囲内
-    warn: '#f59e0b', // 黄  — 警戒
-    over: '#ef4444', // 赤  — 超過
+    low:  '#3b82f6',
+    ok:   '#10b981',
+    warn: '#f59e0b',
+    over: '#ef4444',
   }
   const labelByStatus = {
-    low:  '人件費を抑えすぎ',
+    low:  '抑えすぎ',
     ok:   '範囲内',
-    warn: '上限に近い',
+    warn: '警戒',
     over: '超過',
   }
-
-  // ─── 半円メーター ───
-  const W = 220, H = 130
-  const cx = W / 2, cy = H - 18, r = 86
-  const startAngle = Math.PI            // 180°
-  const endAngle   = 0                  // 0°
-  const a = startAngle + (endAngle - startAngle) * pct
-  const px = cx + r * Math.cos(a)
-  const py = cy + r * Math.sin(a)
-
-  // 緑帯セクター
-  const sectorPath = (from, to) => {
-    const a1 = startAngle + (endAngle - startAngle) * (from / LABOR_BAND_HARD_MAX)
-    const a2 = startAngle + (endAngle - startAngle) * (to   / LABOR_BAND_HARD_MAX)
-    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1)
-    const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2)
-    return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`
-  }
+  const color = colorByStatus[status]
 
   return (
     <div style={{
-      background:'white', borderRadius:12, padding:'16px 18px',
+      background:'white', borderRadius:12, padding:'12px 14px',
       border:'1px solid #e2e8f0', boxShadow:'0 1px 3px rgba(15,23,42,0.04)',
-      display:'flex', flexDirection:'column', gap:6,
+      display:'flex', flexDirection:'column', gap:6, justifyContent:'space-between',
     }}>
-      <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between' }}>
-        <div style={{ fontSize:11, color:'#64748b' }}>人件比率（前半平均）</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <div style={{ fontSize:11, color:'#64748b' }}>人件比率</div>
         <div style={{
-          fontSize:11, fontWeight:700, color: colorByStatus[status],
-          background: colorByStatus[status] + '1a', padding:'2px 8px', borderRadius:8,
+          fontSize:10, fontWeight:700, color,
+          background: color + '1a', padding:'2px 8px', borderRadius:8,
         }}>{labelByStatus[status]}</div>
       </div>
-      <div style={{ display:'flex', alignItems:'flex-end', gap:12 }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:180, height:108 }}>
-          {/* 背景アーク */}
-          <path d={sectorPath(0, LABOR_BAND_HARD_MAX)} stroke="#e2e8f0" strokeWidth="12" fill="none" strokeLinecap="round" />
-          {/* 緑帯 */}
-          <path d={sectorPath(band.min, band.max)} stroke="#86efac" strokeWidth="12" fill="none" strokeLinecap="butt" />
-          {/* 値アーク */}
-          <path d={sectorPath(0, clamped)} stroke={colorByStatus[status]} strokeWidth="12" fill="none" strokeLinecap="round" />
-          {/* 針 */}
-          <line x1={cx} y1={cy} x2={px.toFixed(1)} y2={py.toFixed(1)} stroke="#0f172a" strokeWidth="2" strokeLinecap="round" />
-          <circle cx={cx} cy={cy} r="5" fill="#0f172a" />
-          {/* 目盛ラベル */}
-          <text x={cx + r * Math.cos(startAngle) - 4} y={cy + 14} fontSize="9" fill="#94a3b8" textAnchor="middle" fontFamily="system-ui, sans-serif">0%</text>
-          <text x={cx + r * Math.cos(endAngle) + 4} y={cy + 14} fontSize="9" fill="#94a3b8" textAnchor="middle" fontFamily="system-ui, sans-serif">{LABOR_BAND_HARD_MAX}%</text>
-        </svg>
-        <div style={{ flex:1, textAlign:'right' }}>
-          <div style={{ fontSize:32, fontWeight:800, color: colorByStatus[status], lineHeight:1 }}>
-            {v.toFixed(1)}<span style={{ fontSize:14, fontWeight:600, marginLeft:2 }}>%</span>
-          </div>
-          <div style={{ fontSize:10, color:'#94a3b8', marginTop:6 }}>
-            緑帯: {band.min}〜{band.max}%
-          </div>
-        </div>
+
+      <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+        <span style={{ fontSize:22, fontWeight:800, color, lineHeight:1 }}>{v.toFixed(1)}</span>
+        <span style={{ fontSize:11, fontWeight:600, color }}>%</span>
+        <span style={{ fontSize:9, color:'#94a3b8', marginLeft:'auto' }}>目標 {band.min}〜{band.max}%</span>
+      </div>
+
+      {/* 横バー */}
+      <div style={{ position:'relative', height:10, background:'#F1F5F9', borderRadius:5, overflow:'visible' }}>
+        {/* 緑帯（目標範囲） */}
+        <div style={{
+          position:'absolute', top:0, bottom:0,
+          left: `${bandLeftPct}%`, width: `${bandRightPct - bandLeftPct}%`,
+          background:'#86efac', borderRadius:0, opacity:0.7,
+        }} />
+        {/* 現在値の塗り */}
+        <div style={{
+          position:'absolute', top:0, bottom:0, left:0,
+          width: `${pct}%`, background: color, borderRadius:5, opacity:0.85,
+        }} />
+        {/* 現在位置マーカー（縦線 + 上に▼） */}
+        <div style={{
+          position:'absolute', top:-3, bottom:-3,
+          left: `calc(${pct}% - 1.5px)`, width:3, background:'#0F172A',
+          borderRadius:2,
+        }} />
+      </div>
+
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'#94a3b8' }}>
+        <span>0%</span>
+        <span>{max}%</span>
       </div>
     </div>
   )
@@ -614,12 +607,12 @@ export default function Targets() {
             <div key={i} style={{
               background: palette[i],
               border: `1px solid ${borders[i]}`,
-              borderRadius:12, padding: isHero ? '20px 22px' : '14px 16px',
+              borderRadius:12, padding: isHero ? '12px 16px' : '10px 14px',
               boxShadow:'0 1px 3px rgba(15,23,42,0.04)',
             }}>
-              <div style={{ fontSize:11, color:'#64748b', marginBottom: isHero ? 8 : 4 }}>{k.label}</div>
-              <div style={{ fontSize: isHero ? 30 : 19, fontWeight:800, lineHeight:1.15, color:texts[i], marginBottom:4 }}>{k.value}</div>
-              <div style={{ fontSize:11, color:'#94a3b8' }}>{k.sub}</div>
+              <div style={{ fontSize:10, color:'#64748b', marginBottom: 2 }}>{k.label}</div>
+              <div style={{ fontSize: isHero ? 22 : 16, fontWeight:800, lineHeight:1.15, color:texts[i], marginBottom:2 }}>{k.value}</div>
+              <div style={{ fontSize:10, color:'#94a3b8' }}>{k.sub}</div>
             </div>
           )
         })}

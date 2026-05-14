@@ -179,6 +179,9 @@ export default function Login() {
           </button>
         </form>
 
+        <p style={{ ...styles.footer, marginBottom: 8 }}>
+          <Link to="/forgot-password" style={styles.link}>パスワードを忘れた方はこちら</Link>
+        </p>
         <p style={styles.footer}>
           アカウントをお持ちでない方は
           <Link to="/signup" style={styles.link}>新規登録</Link>
