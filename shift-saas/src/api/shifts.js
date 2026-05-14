@@ -76,10 +76,16 @@ export async function loadAssignments({ versionId }) {
   const assigned = {}
   for (const row of data ?? []) {
     const day = dateToDay(row.date)
-    const sh = parseInt(row.start_time.slice(0, 2), 10)
-    const eh = parseInt(row.end_time.slice(0, 2), 10)
-    for (let h = sh; h < eh; h++) {
-      const slot = `${h}:00`
+    // DB は HH:MM(:SS) で保存されているので分まで読む
+    const [sh, sm = '00'] = (row.start_time || '0:0').split(':')
+    const [eh, em = '00'] = (row.end_time   || '0:0').split(':')
+    const startMin = parseInt(sh, 10) * 60 + parseInt(sm, 10)
+    const endMin   = parseInt(eh, 10) * 60 + parseInt(em, 10)
+    // 15 分ごとのスロット全てに employee_id を展開
+    for (let min = startMin; min < endMin; min += 15) {
+      const h = Math.floor(min / 60)
+      const m = min % 60
+      const slot = `${h}:${m === 0 ? '00' : m < 10 ? '0' + m : m}`
       ;(assigned[day] ||= {})[slot] ||= []
       assigned[day][slot].push(row.employee_id)
     }
