@@ -162,7 +162,7 @@ export default function ShiftDecision() {
   const [editDayTask,      setEditDayTask]      = useState(null) // taskId being edited for the day
   const [dayPatternMap,    setDayPatternMap]    = useState(initialDayPatterns) // day -> pattern key
   const [half,             setHalf]             = useState('first') // 'first' | 'second'
-  const [viewMode,         setViewMode]         = useState('half')  // 'day' | 'week' | 'half' | 'month' | 'calendar'
+  const [viewMode,         setViewMode]         = useState('day')   // 'day' | 'week' | 'half' | 'month' | 'calendar'
   const [showCalendar,     setShowCalendar]     = useState(false)
   const [showDisplayPanel, setShowDisplayPanel] = useState(true)
   const [displayItems,     setDisplayItems]     = useState({
@@ -537,6 +537,69 @@ export default function ShiftDecision() {
   const dayTarget   = dailyTargets.find(t => t.day === selectedDay)
   const dailyOrders = dayTarget?.orders ?? 200
 
+  // ── 集約ビュー (週/半月/月) 用: 日ごとの簡易サマリーを計算 ──
+  const summarizeDay = (day) => {
+    const t        = dailyTargets.find(x => x.day === day)
+    const patKey   = dayPatternMap[day] || 'weekday1'
+    const pattern  = SALES_PATTERNS[patKey]
+    const plannedSalesYen = pattern
+      ? Object.values(pattern.hourlySales).reduce((a,b) => a + (b||0), 0)
+      : (t?.sales ?? 0) * 1000
+    // ピーク必要人員（その日の業務込み）
+    const tasks    = getEffectiveTasks(day).filter(x => x.enabled)
+    const orders   = t?.orders ?? 200
+    const peakRequired = Math.max(0, ...hours.map(h => {
+      const extra = tasks.filter(x => {
+        if (!x.startTime || !x.endTime) return false
+        const [sh, sm = 0] = x.startTime.split(':').map(Number)
+        const [eh, em = 0] = x.endTime.split(':').map(Number)
+        const sMin = sh*60+sm, eMin = eh*60+em
+        const hMin = h*60
+        return hMin >= sMin && hMin < eMin
+      }).reduce((acc, x) => acc + (x.requiredStaff || 0), 0)
+      return calcRequiredStaff(orders, h, storeConfig.avgProductivity, extra)
+    }))
+    // 配置時間 (assigned[day][slot] の延べ要素数 × 0.25h)
+    let assignedSlotCount = 0
+    let peakAssigned = 0
+    if (assigned[day]) {
+      for (const ids of Object.values(assigned[day])) {
+        if (Array.isArray(ids)) {
+          assignedSlotCount += ids.length
+          peakAssigned = Math.max(peakAssigned, ids.length)
+        }
+      }
+    }
+    const assignedHours = assignedSlotCount * 0.25
+    // 概算人件費（配置スタッフの wage × 時間）
+    let estLaborYen = 0
+    if (assigned[day]) {
+      const perEmpSlots = {}
+      for (const ids of Object.values(assigned[day])) {
+        if (!Array.isArray(ids)) continue
+        for (const id of ids) perEmpSlots[id] = (perEmpSlots[id] || 0) + 1
+      }
+      for (const [id, n] of Object.entries(perEmpSlots)) {
+        const emp = staff.find(s => String(s.id) === String(id))
+        const wage = emp?.wage ?? 1050
+        estLaborYen += wage * (n * 0.25)
+      }
+    }
+    const laborRatio = plannedSalesYen > 0 ? (estLaborYen / plannedSalesYen * 100) : null
+    return {
+      day,
+      dow: t?.dow ?? daysConfig.find(d => d.day === day)?.dow,
+      isWeekend: daysConfig.find(d => d.day === day)?.isWeekend ?? false,
+      plannedSalesYen,
+      peakRequired,
+      peakAssigned,
+      assignedHours,
+      estLaborYen,
+      laborRatio,
+      taskCount: tasks.length,
+    }
+  }
+
   const effectiveTasks = getEffectiveTasks(selectedDay)
   const getRequired = (slot) => {
     const [h, m] = slot.split(':').map(Number)
@@ -772,7 +835,130 @@ export default function ShiftDecision() {
         ))}
       </div>
 
+      {/* ── 集約サマリー（週/半月/月） ── */}
+      {viewMode !== 'day' && (() => {
+        const days = visibleDays
+        const summaries = days.map(d => summarizeDay(d.day))
+        const totals = summaries.reduce((acc, s) => ({
+          plannedSalesYen: acc.plannedSalesYen + s.plannedSalesYen,
+          peakRequiredSum: acc.peakRequiredSum + s.peakRequired,
+          peakAssignedSum: acc.peakAssignedSum + s.peakAssigned,
+          assignedHours:   acc.assignedHours   + s.assignedHours,
+          estLaborYen:     acc.estLaborYen     + s.estLaborYen,
+        }), { plannedSalesYen:0, peakRequiredSum:0, peakAssignedSum:0, assignedHours:0, estLaborYen:0 })
+        const totalLaborRatio = totals.plannedSalesYen > 0
+          ? (totals.estLaborYen / totals.plannedSalesYen * 100) : null
+
+        const headLabel = viewMode === 'week'  ? '週サマリー (7日)'
+                       : viewMode === 'half'  ? `半月サマリー (${half === 'first' ? '前半1〜15日' : `後半16〜${daysConfig.length}日`})`
+                       : `月サマリー (${daysConfig.length}日)`
+
+        const cellTd = { padding:'7px 8px', textAlign:'right', fontVariantNumeric:'tabular-nums', borderBottom:'1px solid #f1f5f9', fontSize:12, color:'#0F172A', whiteSpace:'nowrap' }
+        const cellTh = { padding:'8px 8px', textAlign:'center', background:'#F1F5F9', fontWeight:700, fontSize:11.5, color:'#1e293b', borderBottom:'1px solid #cbd5e1', whiteSpace:'nowrap' }
+
+        return (
+          <div style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:10, padding:'14px 16px', boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+              <h3 style={{ fontSize:13, fontWeight:700, color:'#0F172A', margin:0 }}>{headLabel}</h3>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>日付クリックで「日」ビューに切替</span>
+            </div>
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ borderCollapse:'collapse', minWidth:'100%', fontSize:12 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...cellTh, textAlign:'left', position:'sticky', left:0, zIndex:2 }}>項目</th>
+                    {summaries.map(s => (
+                      <th key={s.day} style={{
+                        ...cellTh,
+                        cursor:'pointer',
+                        color: s.isWeekend ? '#be123c' : cellTh.color,
+                        background: s.isWeekend ? '#FEF2F2' : cellTh.background,
+                      }}
+                      onClick={() => { setViewMode('day'); setSelectedDay(s.day) }}>
+                        <div>{s.day}日</div>
+                        <div style={{ fontSize:10, fontWeight:400 }}>{s.dow}</div>
+                      </th>
+                    ))}
+                    <th style={{ ...cellTh, background:'#94a3b8', color:'white' }}>合計/平均</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>計画売上 (¥)</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={cellTd}>{Math.round(s.plannedSalesYen).toLocaleString()}</td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>{Math.round(totals.plannedSalesYen).toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>ピーク必要人員</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={cellTd}>{s.peakRequired}</td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>—</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>ピーク配置人員</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={{
+                        ...cellTd,
+                        color: s.peakAssigned < s.peakRequired ? '#B91C1C' : '#0F172A',
+                        fontWeight: s.peakAssigned < s.peakRequired ? 700 : 'normal',
+                      }}>{s.peakAssigned}</td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>—</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>配置時間合計 (h)</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={cellTd}>{s.assignedHours.toFixed(1)}</td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>{totals.assignedHours.toFixed(1)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>概算人件費 (¥)</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={cellTd}>{Math.round(s.estLaborYen).toLocaleString()}</td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>{Math.round(totals.estLaborYen).toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>人件比率 (%)</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={{
+                        ...cellTd,
+                        color: s.laborRatio == null ? '#94a3b8'
+                          : s.laborRatio > 35 ? '#B91C1C'
+                          : s.laborRatio > 30 ? '#92400E'
+                          : '#0F172A',
+                        fontWeight: s.laborRatio != null && s.laborRatio > 30 ? 700 : 'normal',
+                      }}>
+                        {s.laborRatio == null ? '—' : s.laborRatio.toFixed(1)}
+                      </td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>
+                      {totalLaborRatio == null ? '—' : totalLaborRatio.toFixed(1)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#334155' }}>特別業務 (件)</td>
+                    {summaries.map(s => (
+                      <td key={s.day} style={cellTd}>{s.taskCount}</td>
+                    ))}
+                    <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop:10, fontSize:11, color:'#64748b' }}>
+              ⚠ <span style={{ color:'#B91C1C' }}>赤字</span>: 配置人員 &lt; 必要人員、または人件比率 35% 超過
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── Daily pattern selector ── */}
+      {viewMode === 'day' && (
       <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', }}>
         <span style={{ fontSize:12, color:'#64748b' }}>{selectedDay}日のパターン:</span>
         {Object.entries(SALES_PATTERNS).map(([key, p]) => {
@@ -790,7 +976,10 @@ export default function ShiftDecision() {
           適用パターン売上合計: ¥{Object.values(currentPattern?.hourlySales || {}).reduce((a,b)=>a+b,0).toLocaleString()}
         </span>
       </div>
+      )}
 
+      {viewMode === 'day' && (
+      <>
       {/* ── Special task toggles (per-day) ── */}
       {displayItems.specialTasks && (
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-start', }}>
@@ -1058,6 +1247,8 @@ export default function ShiftDecision() {
           </tfoot>
         </table>
       </div>
+      </>
+      )}
 
 
       {/* ── Legend ── */}
