@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { dailyTargets, YEAR_MONTH, storeConfig, calcRequiredStaff, ORDER_DISTRIBUTION, SALES_PATTERNS } from '../../data/mockData'
 import { readWorkbookFromFile, extractSalesPatterns, matchPatternKey } from '../../utils/excelImport.js'
 import { useOrg } from '../../context/OrgContext'
@@ -7,6 +7,12 @@ import { loadSettings, saveSettings } from '../../api/orgSettings'
 
 const TARGET_YEAR  = 2026
 const TARGET_MONTH = 4
+
+const DEFAULT_LABOR_BAND = { min: 22, max: 32 } // %
+const LABOR_BAND_HARD_MAX = 50 // %  ゲージ最大値
+
+// 曜日インデックスを 0=日…6=土 で揃える
+const DOW_INDEX = { '日':0, '月':1, '火':2, '水':3, '木':4, '金':5, '土':6 }
 
 // daysConfigベースの初期スケルトン（値ゼロ） — mockData の flash を防ぐ
 function makeSkeleton() {
@@ -38,6 +44,146 @@ const FIELDS = [
 ]
 
 const ACTUAL_RATIO = [0.98, 0.93, 1.04, 1.06, 0.97, 1.01, 1.05, 0.99, 1.03, 0.95, 1.00, 1.07, 0.98, 1.02, 0.96]
+
+// 棒(目標) + 折れ線(実績) の複合グラフ
+function SVGBarLineChart({ targets }) {
+  const planVals   = targets.map(d => d.sales)
+  const actualVals = targets.map((d, i) => Math.round(d.sales * ACTUAL_RATIO[i]))
+
+  const allVals = [...planVals, ...actualVals, 0]
+  const yMax = Math.max(...allVals) * 1.12 || 1
+  const yMin = 0
+
+  const W = 700, H = 200
+  const L = 62, R = 16, T = 12, B = 40
+  const PW = W - L - R
+  const PH = H - T - B
+
+  const n = targets.length
+  const slotW = PW / n
+  const xc = i => L + slotW * (i + 0.5)
+  const yp = v => T + PH - ((v - yMin) / (yMax - yMin || 1)) * PH
+  const barW = Math.max(6, slotW * 0.55)
+
+  const actPts = actualVals.map((v, i) => `${xc(i).toFixed(1)},${yp(v).toFixed(1)}`).join(' ')
+
+  const gridVals = Array.from({ length: 5 }, (_, i) => yMin + (yMax - yMin) * i / 4)
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'100%' }}>
+      {gridVals.map((v, i) => (
+        <g key={i}>
+          <line x1={L} y1={yp(v).toFixed(1)} x2={W - R} y2={yp(v).toFixed(1)} stroke="#f1f5f9" strokeWidth="1" />
+          <text x={L - 5} y={yp(v) + 3.5} textAnchor="end" fontSize="9" fill="#94a3b8" fontFamily="system-ui, sans-serif">
+            {Math.round(v).toLocaleString('ja-JP')}
+          </text>
+        </g>
+      ))}
+      {planVals.map((v, i) => (
+        <rect key={i}
+          x={(xc(i) - barW / 2).toFixed(1)} y={yp(v).toFixed(1)}
+          width={barW.toFixed(1)} height={(T + PH - yp(v)).toFixed(1)}
+          fill="#c7d2fe" rx="3"
+        />
+      ))}
+      <polyline points={actPts} fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round" />
+      {actualVals.map((v, i) => (
+        <circle key={i} cx={xc(i).toFixed(1)} cy={yp(v).toFixed(1)} r="3" fill="white" stroke="#10b981" strokeWidth="2" />
+      ))}
+      {targets.map((d, i) => (
+        <text key={d.day} x={xc(i).toFixed(1)} y={T + PH + 15} textAnchor="middle" fontSize="9" fill={d.isWeekend ? '#f87171' : '#94a3b8'} fontFamily="system-ui, sans-serif">
+          {d.day}日
+        </text>
+      ))}
+    </svg>
+  )
+}
+
+// 人件比率ゲージ（半円メーター + 信号機）
+function LaborRatioGauge({ ratio, band }) {
+  // ratio: % (0..50くらい)
+  // band: { min, max }  緑帯
+  const v = Number.isFinite(ratio) ? ratio : 0
+  const clamped = Math.max(0, Math.min(LABOR_BAND_HARD_MAX, v))
+  const pct = clamped / LABOR_BAND_HARD_MAX
+
+  const status =
+    v < band.min ? 'low'
+    : v <= band.max ? 'ok'
+    : v <= band.max + 5 ? 'warn'
+    : 'over'
+
+  const colorByStatus = {
+    low:  '#3b82f6', // 青  — 投下不足
+    ok:   '#10b981', // 緑  — 範囲内
+    warn: '#f59e0b', // 黄  — 警戒
+    over: '#ef4444', // 赤  — 超過
+  }
+  const labelByStatus = {
+    low:  '人件費を抑えすぎ',
+    ok:   '範囲内',
+    warn: '上限に近い',
+    over: '超過',
+  }
+
+  // ─── 半円メーター ───
+  const W = 220, H = 130
+  const cx = W / 2, cy = H - 18, r = 86
+  const startAngle = Math.PI            // 180°
+  const endAngle   = 0                  // 0°
+  const a = startAngle + (endAngle - startAngle) * pct
+  const px = cx + r * Math.cos(a)
+  const py = cy + r * Math.sin(a)
+
+  // 緑帯セクター
+  const sectorPath = (from, to) => {
+    const a1 = startAngle + (endAngle - startAngle) * (from / LABOR_BAND_HARD_MAX)
+    const a2 = startAngle + (endAngle - startAngle) * (to   / LABOR_BAND_HARD_MAX)
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1)
+    const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2)
+    return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`
+  }
+
+  return (
+    <div style={{
+      background:'white', borderRadius:12, padding:'16px 18px',
+      border:'1px solid #e2e8f0', boxShadow:'0 1px 3px rgba(15,23,42,0.04)',
+      display:'flex', flexDirection:'column', gap:6,
+    }}>
+      <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between' }}>
+        <div style={{ fontSize:11, color:'#64748b' }}>人件比率（前半平均）</div>
+        <div style={{
+          fontSize:11, fontWeight:700, color: colorByStatus[status],
+          background: colorByStatus[status] + '1a', padding:'2px 8px', borderRadius:8,
+        }}>{labelByStatus[status]}</div>
+      </div>
+      <div style={{ display:'flex', alignItems:'flex-end', gap:12 }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:180, height:108 }}>
+          {/* 背景アーク */}
+          <path d={sectorPath(0, LABOR_BAND_HARD_MAX)} stroke="#e2e8f0" strokeWidth="12" fill="none" strokeLinecap="round" />
+          {/* 緑帯 */}
+          <path d={sectorPath(band.min, band.max)} stroke="#86efac" strokeWidth="12" fill="none" strokeLinecap="butt" />
+          {/* 値アーク */}
+          <path d={sectorPath(0, clamped)} stroke={colorByStatus[status]} strokeWidth="12" fill="none" strokeLinecap="round" />
+          {/* 針 */}
+          <line x1={cx} y1={cy} x2={px.toFixed(1)} y2={py.toFixed(1)} stroke="#0f172a" strokeWidth="2" strokeLinecap="round" />
+          <circle cx={cx} cy={cy} r="5" fill="#0f172a" />
+          {/* 目盛ラベル */}
+          <text x={cx + r * Math.cos(startAngle) - 4} y={cy + 14} fontSize="9" fill="#94a3b8" textAnchor="middle" fontFamily="system-ui, sans-serif">0%</text>
+          <text x={cx + r * Math.cos(endAngle) + 4} y={cy + 14} fontSize="9" fill="#94a3b8" textAnchor="middle" fontFamily="system-ui, sans-serif">{LABOR_BAND_HARD_MAX}%</text>
+        </svg>
+        <div style={{ flex:1, textAlign:'right' }}>
+          <div style={{ fontSize:32, fontWeight:800, color: colorByStatus[status], lineHeight:1 }}>
+            {v.toFixed(1)}<span style={{ fontSize:14, fontWeight:600, marginLeft:2 }}>%</span>
+          </div>
+          <div style={{ fontSize:10, color:'#94a3b8', marginTop:6 }}>
+            緑帯: {band.min}〜{band.max}%
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function SVGLineChart({ targets, meta }) {
   const planVals   = targets.map(d => meta.getValue(d))
@@ -110,20 +256,33 @@ export default function Targets() {
   const [saving, setSaving] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
+  const [prevMonthTargets, setPrevMonthTargets] = useState([])
+  const [laborBand, setLaborBand] = useState(DEFAULT_LABOR_BAND)
+
   useEffect(() => {
     if (!storeId) return
     let cancelled = false
+    const prevYear  = TARGET_MONTH === 1 ? TARGET_YEAR - 1 : TARGET_YEAR
+    const prevMonth = TARGET_MONTH === 1 ? 12 : TARGET_MONTH - 1
     Promise.all([
       loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH }),
+      loadTargets({ storeId, year: prevYear,   month: prevMonth }),
       loadSettings(storeId),
     ])
-      .then(([dbRows, settings]) => {
+      .then(([dbRows, prevRows, settings]) => {
         if (cancelled) return
         if (dbRows.length) {
           const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
           setAllTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
         }
+        setPrevMonthTargets(prevRows ?? [])
         if (settings?.salesPatterns) setPatterns(settings.salesPatterns)
+        if (settings?.laborRatioBand) {
+          setLaborBand({
+            min: Number(settings.laborRatioBand.min ?? DEFAULT_LABOR_BAND.min),
+            max: Number(settings.laborRatioBand.max ?? DEFAULT_LABOR_BAND.max),
+          })
+        }
       })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
@@ -341,6 +500,26 @@ export default function Targets() {
   const laborRatio = (d) => d.sales > 0 ? ((d.laborCost || 0) / d.sales * 100).toFixed(1) : '—'
   const laborProd  = (d) => (d.laborCost || 0) > 0 ? Math.round(d.sales * AVG_WAGE / (d.laborCost || 1)) : '—'
 
+  // 前半 / 後半全体の人件比率（ゲージ用）
+  const avgLaborRatio = totalSales > 0 ? (totalLaborCost / totalSales * 100) : 0
+
+  // 前月の同曜日平均（プレースホルダ用、最低限の準備）— 現状未配線だが将来利用
+  // eslint-disable-next-line no-unused-vars
+  const _prevMonthAvgByDow = useMemo(() => {
+    const sums = {}, counts = {}
+    for (const r of prevMonthTargets) {
+      const dowIdx = (() => {
+        const d = new Date(TARGET_YEAR, TARGET_MONTH - 2, r.day) // 前月
+        return d.getDay()
+      })()
+      sums[dowIdx]   = (sums[dowIdx]   || 0) + (r.sales || 0)
+      counts[dowIdx] = (counts[dowIdx] || 0) + 1
+    }
+    const out = {}
+    for (const k of Object.keys(sums)) out[k] = Math.round(sums[k] / counts[k])
+    return out
+  }, [prevMonthTargets])
+
   const chartMeta = {
     sales:     { label: '売上(千円)', color: '#818cf8', getValue: d => d.sales },
     customers: { label: '客数(名)',   color: '#10b981', getValue: d => d.customers },
@@ -391,20 +570,31 @@ export default function Targets() {
         )}
       </div>
 
-      {/* KPI Cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:20 }}>
-        {kpiCards.map((k, i) => (
-          <div key={i} style={{
-            background: ['#eef2ff','#d1fae5','#fef3c7','#ede9fe'][i],
-            border: `1px solid ${['#c7d2fe','#a7f3d0','#fde68a','#ddd6fe'][i]}`,
-            borderRadius:12, padding:'16px 18px',
-            boxShadow:'0 1px 3px rgba(15,23,42,0.04)',
-          }}>
-            <div style={{ fontSize:11, color:'#64748b', marginBottom:6 }}>{k.label}</div>
-            <div style={{ fontSize:24, fontWeight:700, lineHeight:1.2, color:['#3730a3','#065f46','#92400e','#5b21b6'][i], marginBottom:4 }}>{k.value}</div>
-            <div style={{ fontSize:11, color:'#94a3b8' }}>{k.sub}</div>
-          </div>
-        ))}
+      {/* KPI Cards — 売上 hero + その他 secondary + 人件比率ゲージ */}
+      <div style={{
+        display:'grid',
+        gridTemplateColumns:'1.4fr 1fr 1fr 1fr 1.2fr',
+        gap:12, marginBottom:20,
+      }}>
+        {kpiCards.map((k, i) => {
+          const isHero = i === 0
+          const palette = ['#eef2ff','#d1fae5','#fef3c7','#ede9fe']
+          const borders = ['#c7d2fe','#a7f3d0','#fde68a','#ddd6fe']
+          const texts   = ['#3730a3','#065f46','#92400e','#5b21b6']
+          return (
+            <div key={i} style={{
+              background: palette[i],
+              border: `1px solid ${borders[i]}`,
+              borderRadius:12, padding: isHero ? '20px 22px' : '14px 16px',
+              boxShadow:'0 1px 3px rgba(15,23,42,0.04)',
+            }}>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom: isHero ? 8 : 4 }}>{k.label}</div>
+              <div style={{ fontSize: isHero ? 30 : 19, fontWeight:800, lineHeight:1.15, color:texts[i], marginBottom:4 }}>{k.value}</div>
+              <div style={{ fontSize:11, color:'#94a3b8' }}>{k.sub}</div>
+            </div>
+          )
+        })}
+        <LaborRatioGauge ratio={avgLaborRatio} band={laborBand} />
       </div>
 
       {/* Chart */}
@@ -427,18 +617,36 @@ export default function Targets() {
             ))}
           </div>
         </div>
-        <div style={{ height: 188 }}>
-          <SVGLineChart targets={targets} meta={chartMeta[activeChart]} />
+        <div style={{ height: activeChart === 'sales' ? 200 : 188 }}>
+          {activeChart === 'sales'
+            ? <SVGBarLineChart targets={targets} />
+            : <SVGLineChart targets={targets} meta={chartMeta[activeChart]} />
+          }
         </div>
         <div style={{ display:'flex', gap:20, fontSize:11, color:'#64748b', marginTop:4, paddingLeft:62 }}>
-          <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <svg width="20" height="10" style={{ display:'block' }}><line x1="0" y1="5" x2="20" y2="5" stroke="#a5b4fc" strokeWidth="1.5" strokeDasharray="6 3" /></svg>
-            計画
-          </span>
-          <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <svg width="20" height="10" style={{ display:'block' }}><line x1="0" y1="5" x2="20" y2="5" stroke="#10b981" strokeWidth="2" /><circle cx="10" cy="5" r="3" fill="white" stroke="#10b981" strokeWidth="2" /></svg>
-            実績（参考）
-          </span>
+          {activeChart === 'sales' ? (
+            <>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <svg width="18" height="10" style={{ display:'block' }}><rect x="2" y="1" width="14" height="8" fill="#c7d2fe" rx="2" /></svg>
+                計画（目標）
+              </span>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <svg width="20" height="10" style={{ display:'block' }}><line x1="0" y1="5" x2="20" y2="5" stroke="#10b981" strokeWidth="2" /><circle cx="10" cy="5" r="3" fill="white" stroke="#10b981" strokeWidth="2" /></svg>
+                実績（参考）
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <svg width="20" height="10" style={{ display:'block' }}><line x1="0" y1="5" x2="20" y2="5" stroke="#a5b4fc" strokeWidth="1.5" strokeDasharray="6 3" /></svg>
+                計画
+              </span>
+              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <svg width="20" height="10" style={{ display:'block' }}><line x1="0" y1="5" x2="20" y2="5" stroke="#10b981" strokeWidth="2" /><circle cx="10" cy="5" r="3" fill="white" stroke="#10b981" strokeWidth="2" /></svg>
+                実績（参考）
+              </span>
+            </>
+          )}
         </div>
       </div>
 
