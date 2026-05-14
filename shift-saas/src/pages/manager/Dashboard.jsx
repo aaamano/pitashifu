@@ -1,14 +1,26 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff as mockStaff, shiftData as mockShiftData, daysConfig, dailyTargets as mockDailyTargets, STORE_NAME, YEAR_MONTH, decomposeShiftHours, calcDailyPay } from '../../data/mockData'
+import { staff as mockStaff, shiftData as mockShiftData, dailyTargets as mockDailyTargets, STORE_NAME, decomposeShiftHours, calcDailyPay } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadTargets } from '../../api/targets'
 import * as employeesApi from '../../api/employees'
-import * as versionsApi from '../../api/versions'
 import * as shiftsApi from '../../api/shifts'
 
-const TARGET_YEAR  = 2026
-const TARGET_MONTH = 4
+const DOW_JP = ['日','月','火','水','木','金','土']
+const pad = (n) => String(n).padStart(2, '0')
+
+// 期間 (year, month, half) から daysConfig を動的生成
+function buildPeriodDaysConfig(year, month, half) {
+  const lastDayOfMonth = new Date(year, month, 0).getDate()
+  const startDay = half === 'first' ? 1 : 16
+  const endDay   = half === 'first' ? Math.min(15, lastDayOfMonth) : lastDayOfMonth
+  const out = []
+  for (let day = startDay; day <= endDay; day++) {
+    const dow = new Date(year, month - 1, day).getDay()
+    out.push({ day, dow: DOW_JP[dow], dowIdx: dow })
+  }
+  return out
+}
 
 // assigned[day][slot]=[empId,...] と empId から、その日の連続スロットを
 // シフトコード ('F' / '9-18' / '13-L' / 'O-16' / 'X') に変換
@@ -62,31 +74,52 @@ export default function Dashboard() {
   const storeId = stores[0]?.id
   const base = `/${orgId}/manager`
 
-  // DB社員 & 最新version の assigned をロード
-  const [dbEmployees, setDbEmployees] = useState([])
-  const [dbAssigned,  setDbAssigned]  = useState({})
+  // 期間ナビ (year, month, half)
+  const today = new Date()
+  const [year,  setYear]  = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const [half,  setHalf]  = useState(today.getDate() <= 15 ? 'first' : 'second')
+  const halfLabel  = half === 'first' ? '前半' : '後半'
+  const periodLabel = `${year}年${month}月 ${halfLabel}`
+  const daysConfig  = useMemo(() => buildPeriodDaysConfig(year, month, half), [year, month, half])
 
+  const prevPeriod = () => {
+    if (half === 'second') { setHalf('first'); return }
+    if (month === 1) { setYear(y => y - 1); setMonth(12) } else { setMonth(m => m - 1) }
+    setHalf('second')
+  }
+  const nextPeriod = () => {
+    if (half === 'first') { setHalf('second'); return }
+    if (month === 12) { setYear(y => y + 1); setMonth(1) } else { setMonth(m => m + 1) }
+    setHalf('first')
+  }
+
+  // DB社員 (期間に依存しない、初回のみ)
+  const [dbEmployees, setDbEmployees] = useState([])
   useEffect(() => {
-    if (!orgId || !storeId) return
+    if (!orgId) return
     let cancelled = false
-    ;(async () => {
-      try {
-        const emps = await employeesApi.listEmployees(orgId)
-        if (cancelled) return
-        setDbEmployees(emps)
-        // 最新の shift_version → assignments を取得
-        const versions = await versionsApi.listVersions(storeId)
-        if (cancelled || !versions?.length) return
-        // 確定があればそれを優先、無ければ最新作成
-        const target = versions.find(v => v.status === 'confirmed') || versions[0]
-        const assigned = await shiftsApi.loadAssignments({ versionId: target.id })
-        if (!cancelled) setDbAssigned(assigned ?? {})
-      } catch (e) {
-        console.error('[Dashboard.loadEmployeesShifts]', e)
-      }
-    })()
+    employeesApi.listEmployees(orgId)
+      .then(emps => { if (!cancelled) setDbEmployees(emps ?? []) })
+      .catch(e => console.error('[Dashboard.loadEmployees]', e))
     return () => { cancelled = true }
-  }, [orgId, storeId])
+  }, [orgId])
+
+  // 期間内のシフト assignment をロード
+  const [dbAssigned, setDbAssigned] = useState({})
+  useEffect(() => {
+    if (!storeId) return
+    let cancelled = false
+    const startDay = half === 'first' ? 1 : 16
+    const lastDayOfMonth = new Date(year, month, 0).getDate()
+    const endDay   = half === 'first' ? Math.min(15, lastDayOfMonth) : lastDayOfMonth
+    const dateFrom = `${year}-${pad(month)}-${pad(startDay)}`
+    const dateTo   = `${year}-${pad(month)}-${pad(endDay)}`
+    shiftsApi.loadShiftsByDateRange({ storeId, dateFrom, dateTo })
+      .then(assigned => { if (!cancelled) setDbAssigned(assigned ?? {}) })
+      .catch(e => console.error('[Dashboard.loadShifts]', e))
+    return () => { cancelled = true }
+  }, [storeId, year, month, half])
 
   // staff / shiftData を派生 (DBがあればDB優先、なければモック)
   const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
@@ -99,23 +132,28 @@ export default function Dashboard() {
     return out
   }, [dbEmployees, dbAssigned])
 
-  // mockData の flash を防ぐためスケルトン（値ゼロ）で初期化
-  const skeleton = useMemo(() => mockDailyTargets.map(d => ({
-    ...d, sales: 0, customers: 0, avgSpend: 0, orders: 0, laborCost: 0,
-  })), [])
-  const [dailyTargets, setDailyTargets] = useState(skeleton)
+  // 期間内の daily_targets をロード
+  const [dailyTargets, setDailyTargets] = useState([])
   useEffect(() => {
     if (!storeId) return
     let cancelled = false
-    loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH })
+    loadTargets({ storeId, year, month })
       .then(dbRows => {
-        if (cancelled || dbRows.length === 0) return
-        const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
-        setDailyTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
+        if (cancelled) return
+        const byDay = Object.fromEntries((dbRows ?? []).map(r => [r.day, r]))
+        const targets = daysConfig.map(d => ({
+          day: d.day, dow: d.dow,
+          sales:     byDay[d.day]?.sales     ?? 0,
+          customers: byDay[d.day]?.customers ?? 0,
+          avgSpend:  byDay[d.day]?.avgSpend  ?? 0,
+          orders:    byDay[d.day]?.orders    ?? 0,
+          laborCost: byDay[d.day]?.laborCost ?? 0,
+        }))
+        setDailyTargets(targets)
       })
       .catch(e => console.error('[Dashboard.loadTargets]', e))
     return () => { cancelled = true }
-  }, [storeId])
+  }, [storeId, year, month, daysConfig])
 
   const totalMonth  = useMemo(() => dailyTargets.reduce((s, d) => s + d.sales, 0), [dailyTargets])
   const totalCust   = useMemo(() => dailyTargets.reduce((s, d) => s + d.customers, 0), [dailyTargets])
@@ -129,10 +167,19 @@ export default function Dashboard() {
     <div className="mgr-page">
 
       {/* Top bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--pita-faint)', marginBottom: 4 }}>{STORE_NAME}</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pita-text)', letterSpacing: '-0.01em' }}>{YEAR_MONTH} 前半 — ダッシュボード</div>
+          <div style={{ fontSize: 14, color: 'var(--pita-muted)', fontWeight: 500 }}>ダッシュボード</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'center' }}>
+          <button onClick={prevPeriod} aria-label="前の期間"
+            style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid var(--pita-border)', background: 'white', fontSize: 18, fontWeight: 700, color: '#3730a3', cursor: 'pointer', fontFamily: 'inherit' }}>‹</button>
+          <div style={{ minWidth: 180, textAlign: 'center', fontSize: 20, fontWeight: 700, color: 'var(--pita-text)', letterSpacing: '-0.01em' }}>
+            {periodLabel}
+          </div>
+          <button onClick={nextPeriod} aria-label="次の期間"
+            style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid var(--pita-border)', background: 'white', fontSize: 18, fontWeight: 700, color: '#3730a3', cursor: 'pointer', fontFamily: 'inherit' }}>›</button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Link to={`${base}/targets`} className="mgr-btn-secondary" style={{ textDecoration: 'none' }}>
@@ -203,7 +250,7 @@ export default function Dashboard() {
           {/* Plan table panel */}
           <div className="pita-panel" style={{ marginBottom: 16 }}>
             <div className="pita-panel-head">
-              計画一覧 — {YEAR_MONTH}前半
+              計画一覧 — {periodLabel}
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table className="pita-plan-table">
@@ -445,9 +492,9 @@ export default function Dashboard() {
           {/* KPI cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
             {[
-              { label: '前半 売上目標合計', value: `¥${totalMonth.toLocaleString()}千`, sub: '前年比 +3.2%',
+              { label: `${halfLabel} 売上目標合計`, value: `¥${totalMonth.toLocaleString()}千`, sub: '前年比 +3.2%',
                 bg: '#eef2ff', border: '#c7d2fe', txt: '#3730a3' },
-              { label: '前半 客数目標', value: `${totalCust.toLocaleString()}名`, sub: `1日平均 ${Math.round(totalCust / 15)}名`,
+              { label: `${halfLabel} 客数目標`, value: `${totalCust.toLocaleString()}名`, sub: `1日平均 ${Math.round(totalCust / Math.max(1, daysConfig.length))}名`,
                 bg: '#d1fae5', border: '#a7f3d0', txt: '#065f46' },
               { label: '平均客単価', value: `¥${avgUnit.toLocaleString()}`, sub: '目標 ¥3,000',
                 bg: '#fef3c7', border: '#fde68a', txt: '#92400e' },
