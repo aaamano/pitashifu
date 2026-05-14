@@ -1,8 +1,9 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { OrgProvider } from './context/OrgContext'
+import { supabase } from './lib/supabase'
 
-import TopPage from './pages/TopPage'
 import NotFound from './pages/NotFound'
 import Login from './pages/auth/Login'
 import Signup from './pages/auth/Signup'
@@ -43,13 +44,48 @@ function OrgScope({ children }) {
   return <OrgProvider>{children}</OrgProvider>
 }
 
+// "/" は自動ルーティング: ログイン済 → 自分の組織画面、未ログイン → /login
+function IndexRedirect() {
+  const { user, loading } = useAuth()
+  const [target, setTarget] = useState(null)
+
+  useEffect(() => {
+    if (loading) return
+    if (!user) { setTarget('/login'); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('org_id, role')
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
+        if (cancelled) return
+        if (emp?.org_id) {
+          const scope = emp.role === 'staff' ? 'employee' : 'manager'
+          setTarget(`/${emp.org_id}/${scope}`)
+        } else {
+          setTarget('/login')
+        }
+      } catch (e) {
+        console.error('[IndexRedirect]', e)
+        setTarget('/login')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user, loading])
+
+  if (!target) return <div style={{ padding: 32 }}>読み込み中…</div>
+  return <Navigate to={target} replace />
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
           {/* Public */}
-          <Route path="/"        element={<TopPage />} />
+          <Route path="/"        element={<IndexRedirect />} />
           <Route path="/login"   element={<Login />} />
           <Route path="/signup"  element={<Signup />} />
           <Route path="/404"     element={<NotFound />} />
