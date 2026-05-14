@@ -3,6 +3,39 @@ import { storeConfig as initialConfig, YEAR_MONTH, skillLabels as initialSkillLa
 import { useOrg } from '../../context/OrgContext'
 import { loadSettings, saveSettings } from '../../api/orgSettings'
 
+// AI 自動配置の重み・モード設定
+export const AI_CONFIG_DEFAULTS = {
+  mode: 'balanced',
+  weights: {
+    retentionPriority: 10, // (11-priority) * 10 のベース係数
+    incompatibility:   15, // 同スロットに相性NGがいた場合の severity あたり減点
+    targetEarnings:     8, // 目標月収が設定済みなら加点
+    lateToEarly:       12, // 前日深夜→翌早番のペナルティ
+  },
+}
+export const AI_CONFIG_PRESETS = {
+  balanced:    { retentionPriority: 10, incompatibility: 15, targetEarnings:  8, lateToEarly: 12 },
+  cost_min:    { retentionPriority:  5, incompatibility: 10, targetEarnings:  0, lateToEarly:  8 },
+  satisfaction:{ retentionPriority: 15, incompatibility: 20, targetEarnings: 15, lateToEarly: 15 },
+}
+const AI_MODE_LABELS = {
+  balanced:     'バランス（推奨）',
+  cost_min:     '人件費最小化',
+  satisfaction: 'スタッフ満足度重視',
+}
+const AI_WEIGHT_LABELS = {
+  retentionPriority: '定着優先度の重み',
+  incompatibility:   '相性NGの減点強さ',
+  targetEarnings:    '目標月収ありの加点',
+  lateToEarly:       '深夜→早番のペナルティ',
+}
+const AI_WEIGHT_HINTS = {
+  retentionPriority: '高い人ほど優先的に配置（高=長期定着スタッフ重視）',
+  incompatibility:   '相性NGが同時に入ると減点。高=徹底回避 / 低=多少同時OK',
+  targetEarnings:    '目標月収を設定したスタッフを優先（高=シフト数を埋めやすく）',
+  lateToEarly:       '前日深夜 → 翌早番の配置を避ける度合い',
+}
+
 // Hardcoded color lookup (avoids Tailwind purge issues with dynamic strings)
 const TASK_COLORS = {
   orange: { card: 'bg-orange-100 border-orange-300 text-orange-900', badge: 'bg-orange-200 text-orange-800', btn: 'bg-orange-100 border-2 border-orange-400 text-orange-800' },
@@ -38,6 +71,7 @@ export default function StoreSettings() {
   const [newSkill,  setNewSkill]  = useState({ key: '', label: '' })
   const [editSkill, setEditSkill] = useState(null)
   const [sukimaEnabled, setSukimaEnabled] = useState(true) // 会社レベル: スキマバイト機能のon/off
+  const [aiConfig,      setAiConfig]      = useState(AI_CONFIG_DEFAULTS)
 
   useEffect(() => {
     if (!storeId || !orgId) return
@@ -60,12 +94,26 @@ export default function StoreSettings() {
           }))
           if (storeS.address) setAddress(storeS.address)
           if (storeS.skillLabels) setSkills(Object.entries(storeS.skillLabels).map(([key, label]) => ({ key, label })))
+          if (storeS.aiConfig) {
+            setAiConfig({
+              mode:    storeS.aiConfig.mode ?? AI_CONFIG_DEFAULTS.mode,
+              weights: { ...AI_CONFIG_DEFAULTS.weights, ...(storeS.aiConfig.weights ?? {}) },
+            })
+          }
         }
         if (typeof companyS?.sukimaEnabled === 'boolean') setSukimaEnabled(companyS.sukimaEnabled)
       })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
   }, [storeId, orgId])
+
+  const applyAiPreset = (mode) => {
+    const preset = AI_CONFIG_PRESETS[mode] ?? AI_CONFIG_DEFAULTS.weights
+    setAiConfig({ mode, weights: { ...preset } })
+  }
+  const updateAiWeight = (key, val) => {
+    setAiConfig(prev => ({ ...prev, weights: { ...prev.weights, [key]: Number(val) } }))
+  }
 
   const addSkill = () => {
     if (!newSkill.key.trim() || !newSkill.label.trim()) return
@@ -85,6 +133,7 @@ export default function StoreSettings() {
       slotInterval: config.slotInterval, avgProductivity: config.avgProductivity,
       breakRules: config.breakRules, specialTasks: config.specialTasks,
       skillLabels, address,
+      aiConfig,
     }
     try {
       await saveSettings(storeId, storeSettings)
@@ -365,6 +414,59 @@ export default function StoreSettings() {
             </div>
           </div>
         </label>
+      </div>
+
+      {/* ── AI 自動配置設定 ── */}
+      <div className="mgr-card" style={{ padding:24, marginBottom:20 }}>
+        <div style={{ marginBottom:16 }}>
+          <h2 style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>AI自動配置の最適化設定</h2>
+          <p style={{ fontSize:11, color:'#64748b', marginTop:3, marginBottom:0 }}>
+            シフト確定作業の「AI配置」で使われるスコアリング要素と重みを設定します。
+          </p>
+        </div>
+
+        {/* モード選択 */}
+        <div style={{ marginBottom:18 }}>
+          <label className="mgr-label">最適化モード</label>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {Object.entries(AI_MODE_LABELS).map(([key, label]) => (
+              <button key={key}
+                type="button"
+                onClick={() => applyAiPreset(key)}
+                style={{
+                  padding:'8px 16px', borderRadius:8, fontSize:12, fontWeight:600,
+                  border: aiConfig.mode === key ? '1px solid #4f46e5' : '1px solid #dde5f0',
+                  background: aiConfig.mode === key ? '#eef0fe' : 'white',
+                  color: aiConfig.mode === key ? '#3730a3' : '#475569',
+                  cursor:'pointer', fontFamily:'inherit',
+                }}
+              >{label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize:11, color:'#94a3b8', marginTop:6 }}>
+            プリセットを選ぶと下のスライダーが切り替わります。さらに細かく調整可能です。
+          </div>
+        </div>
+
+        {/* スコア要素の重み */}
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {Object.entries(AI_WEIGHT_LABELS).map(([key, label]) => (
+            <div key={key}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+                <label style={{ fontSize:12, fontWeight:600, color:'#0f172a' }}>{label}</label>
+                <span style={{ fontSize:13, fontWeight:700, color:'#3730a3', fontFamily:'system-ui' }}>
+                  {aiConfig.weights[key] ?? 0}
+                </span>
+              </div>
+              <input type="range" min={0} max={30} step={1}
+                value={aiConfig.weights[key] ?? 0}
+                onChange={(e) => updateAiWeight(key, e.target.value)}
+                style={{ width:'100%' }}
+              />
+              <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>{AI_WEIGHT_HINTS[key]}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Modal */}
