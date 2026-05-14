@@ -3,6 +3,7 @@ import { staff as initialStaff, shiftData, daysConfig, skillLabels, YEAR_MONTH, 
 import { useOrg } from '../../context/OrgContext'
 import * as employeesApi from '../../api/employees'
 import * as incompatApi from '../../api/incompatibilities'
+import * as invitationsApi from '../../api/invitations'
 import { readWorkbookFromFile, extractStaffList } from '../../utils/excelImport.js'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -96,12 +97,23 @@ const BLANK_CONSTRAINT = { incompatible: [], targetEarnings: 0, retentionPriorit
 const MODAL_TABS = ['基本情報', '連絡先・住所', '固定シフト', 'マネージャー設定']
 
 export default function Members() {
-  const { orgId } = useOrg()
+  const { orgId, stores } = useOrg()
   // mockData フラッシュ防止: 初期stateは空、ロード完了まで読み込み中表示
   const [members,         setMembers]         = useState([])
   const [constraints,     setConstraints]     = useState({})
   const [loading,         setLoading]         = useState(true)
   const [errMsg,          setErrMsg]          = useState('')
+
+  // 招待モーダル state
+  const [showInviteModal,  setShowInviteModal]  = useState(false)
+  const [invitations,      setInvitations]      = useState([])
+  const [inviteForm,       setInviteForm]       = useState({
+    role: 'staff', email: '', nameHint: '', storeIds: [], expiresInDays: 14,
+  })
+  const [inviteMsg,        setInviteMsg]        = useState('')
+  const [creatingInvite,   setCreatingInvite]   = useState(false)
+  const [createdInvite,    setCreatedInvite]    = useState(null) // 作成直後の URL を表示
+  const [copyOk,           setCopyOk]           = useState(false)
 
   useEffect(() => {
     if (!orgId) return
@@ -396,6 +408,55 @@ export default function Members() {
     setShowModal(true)
   }
 
+  // ── 招待モーダル ──
+  const openInviteModal = async () => {
+    setShowInviteModal(true)
+    setCreatedInvite(null); setInviteMsg(''); setCopyOk(false)
+    setInviteForm({
+      role: 'staff', email: '', nameHint: '',
+      storeIds: stores?.map(s => s.id) ?? [],
+      expiresInDays: 14,
+    })
+    if (orgId) {
+      try {
+        const list = await invitationsApi.listInvitations(orgId)
+        setInvitations(list)
+      } catch (e) { console.error('[Members.listInvitations]', e) }
+    }
+  }
+  const createInvite = async () => {
+    if (!orgId) { setInviteMsg('orgId未取得'); return }
+    setCreatingInvite(true); setInviteMsg('')
+    try {
+      const created = await invitationsApi.createInvitation({
+        orgId,
+        role:          inviteForm.role,
+        storeIds:      inviteForm.storeIds,
+        email:         inviteForm.email.trim() || null,
+        nameHint:      inviteForm.nameHint.trim() || null,
+        expiresInDays: Number(inviteForm.expiresInDays) || 14,
+      })
+      setCreatedInvite(created)
+      setInvitations(prev => [created, ...prev])
+    } catch (e) {
+      setInviteMsg(e.message || '作成に失敗しました')
+    } finally {
+      setCreatingInvite(false)
+    }
+  }
+  const copyInviteUrl = async (url) => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopyOk(true); setTimeout(() => setCopyOk(false), 1800)
+    } catch { setInviteMsg('クリップボードへのコピーに失敗') }
+  }
+  const revokeInvite = async (id) => {
+    try {
+      await invitationsApi.revokeInvitation(id)
+      setInvitations(prev => prev.map(i => i.id === id ? { ...i, revoked_at: new Date().toISOString() } : i))
+    } catch (e) { setInviteMsg(e.message || '取消に失敗') }
+  }
+
   const handleSave = async () => {
     const composedName = (form.lastName || form.firstName)
       ? `${form.lastName || ''}${form.lastName && form.firstName ? ' ' : ''}${form.firstName || ''}`.trim()
@@ -470,6 +531,7 @@ export default function Members() {
           <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">CSV / Excel アップロード</button>
           <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
             onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
+          <button onClick={openInviteModal} className="mgr-btn-secondary">招待 URL を発行</button>
           <button onClick={openNew} className="mgr-btn-primary">+ スタッフを追加</button>
         </div>
       </div>
@@ -1134,6 +1196,153 @@ export default function Members() {
                 <button onClick={() => setShowModal(false)} className="mgr-btn-secondary">キャンセル</button>
                 <button onClick={handleSave} className="mgr-btn-primary">保存する</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 招待 URL 発行モーダル ── */}
+      {showInviteModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={() => setShowInviteModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:14, width:'100%', maxWidth:640, maxHeight:'88vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(15,23,42,0.18)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 22px', borderBottom:'1px solid #E2E8F0' }}>
+              <div>
+                <div style={{ fontSize:16, fontWeight:700, color:'#0F172A' }}>招待 URL を発行</div>
+                <div style={{ fontSize:12, color:'#64748B', marginTop:3 }}>URL を渡すと、相手がサインアップ後に自動的にこの組織へ参加します</div>
+              </div>
+              <button onClick={() => setShowInviteModal(false)} style={{ background:'none', border:'none', fontSize:20, color:'#94A3B8', cursor:'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ padding:'18px 22px' }}>
+              {!createdInvite ? (
+                <>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+                    <div>
+                      <label className="mgr-label">ロール</label>
+                      <select className="mgr-input" value={inviteForm.role} onChange={e => setInviteForm(f => ({ ...f, role: e.target.value }))}>
+                        <option value="staff">スタッフ</option>
+                        <option value="manager">マネージャー</option>
+                        <option value="admin">管理者</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mgr-label">有効期限</label>
+                      <select className="mgr-input" value={inviteForm.expiresInDays} onChange={e => setInviteForm(f => ({ ...f, expiresInDays: e.target.value }))}>
+                        <option value={1}>1日</option>
+                        <option value={3}>3日</option>
+                        <option value={7}>7日</option>
+                        <option value={14}>14日</option>
+                        <option value={30}>30日</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mgr-label">メールアドレス（任意）</label>
+                      <input type="email" className="mgr-input" placeholder="指定すると、そのメールでサインアップしたユーザーのみ受諾可"
+                        value={inviteForm.email} onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="mgr-label">表示名（任意）</label>
+                      <input type="text" className="mgr-input" placeholder="例: 田中 太郎"
+                        value={inviteForm.nameHint} onChange={e => setInviteForm(f => ({ ...f, nameHint: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  <label className="mgr-label">アクセス権限を付与する店舗</label>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+                    {(stores ?? []).map(s => {
+                      const on = inviteForm.storeIds.includes(s.id)
+                      return (
+                        <button key={s.id} type="button"
+                          onClick={() => setInviteForm(f => ({
+                            ...f,
+                            storeIds: on ? f.storeIds.filter(x => x !== s.id) : [...f.storeIds, s.id],
+                          }))}
+                          style={{
+                            padding:'6px 14px', borderRadius:18, fontSize:12, fontWeight: on ? 700 : 500,
+                            background: on ? '#4F46E5' : '#F0F5F9',
+                            color:      on ? 'white'   : '#475569',
+                            border:'none', cursor:'pointer', fontFamily:'inherit',
+                          }}>
+                          {on ? '✓ ' : ''}{s.name}
+                        </button>
+                      )
+                    })}
+                    {(stores ?? []).length === 0 && (
+                      <div style={{ fontSize:12, color:'#94A3B8' }}>店舗が登録されていません</div>
+                    )}
+                  </div>
+
+                  {inviteMsg && (
+                    <div style={{ padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13, marginBottom:14 }}>
+                      {inviteMsg}
+                    </div>
+                  )}
+
+                  <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+                    <button onClick={() => setShowInviteModal(false)} className="mgr-btn-secondary">キャンセル</button>
+                    <button onClick={createInvite} disabled={creatingInvite} className="mgr-btn-primary">
+                      {creatingInvite ? '作成中…' : '招待 URL を発行'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ padding:'12px 14px', background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, marginBottom:14 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#065F46' }}>✓ 招待を作成しました</div>
+                    <div style={{ fontSize:11, color:'#065F46', marginTop:4 }}>下記の URL を相手に送ってください。期限内に限り何度でも閲覧できます。</div>
+                  </div>
+                  <label className="mgr-label">招待 URL</label>
+                  <div style={{ display:'flex', gap:8, alignItems:'stretch' }}>
+                    <input readOnly value={createdInvite.url} className="mgr-input" style={{ flex:1, fontFamily:'monospace', fontSize:12 }} onFocus={e => e.target.select()} />
+                    <button onClick={() => copyInviteUrl(createdInvite.url)} className="mgr-btn-primary" style={{ whiteSpace:'nowrap' }}>
+                      {copyOk ? '✓ コピー済' : 'コピー'}
+                    </button>
+                  </div>
+                  <div style={{ marginTop:10, fontSize:11, color:'#64748B', lineHeight:1.6 }}>
+                    所属: {createdInvite.org_id} ／ ロール: {createdInvite.role}<br />
+                    期限: {new Date(createdInvite.expires_at).toLocaleString('ja-JP')}
+                    {createdInvite.email ? `／ 限定メール: ${createdInvite.email}` : ''}
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
+                    <button onClick={() => setCreatedInvite(null)} className="mgr-btn-secondary">もう1件作成</button>
+                    <button onClick={() => setShowInviteModal(false)} className="mgr-btn-primary">閉じる</button>
+                  </div>
+                </>
+              )}
+
+              {/* 履歴 */}
+              {invitations.length > 0 && (
+                <div style={{ marginTop:22, paddingTop:18, borderTop:'1px solid #E2E8F0' }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#475569', marginBottom:8 }}>発行済み招待</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {invitations.map(inv => {
+                      const expired = new Date(inv.expires_at) <= new Date()
+                      const used    = Boolean(inv.used_at)
+                      const revoked = Boolean(inv.revoked_at)
+                      const status =
+                        revoked ? { label:'取消済', color:'#94A3B8', bg:'#F1F5F9' } :
+                        used    ? { label:'使用済', color:'#475569', bg:'#F1F5F9' } :
+                        expired ? { label:'期限切', color:'#92400E', bg:'#FEF3C7' } :
+                                  { label:'有効',   color:'#065F46', bg:'#ECFDF5' }
+                      return (
+                        <div key={inv.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:8 }}>
+                          <span style={{ fontSize:10, fontWeight:700, color:status.color, background:status.bg, padding:'2px 8px', borderRadius:10 }}>{status.label}</span>
+                          <span style={{ fontSize:11, color:'#0F172A', fontWeight:600, flexShrink:0 }}>{inv.role}</span>
+                          <span style={{ fontSize:11, color:'#64748B', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {inv.email || '（メール指定なし）'}
+                          </span>
+                          {!revoked && !used && !expired && (
+                            <>
+                              <button onClick={() => copyInviteUrl(inv.url)} style={{ fontSize:11, padding:'3px 10px', background:'white', border:'1px solid #DDE5F0', borderRadius:6, cursor:'pointer', color:'#475569' }}>コピー</button>
+                              <button onClick={() => revokeInvite(inv.id)} style={{ fontSize:11, padding:'3px 10px', background:'white', border:'1px solid #FECACA', borderRadius:6, cursor:'pointer', color:'#B91C1C' }}>取消</button>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

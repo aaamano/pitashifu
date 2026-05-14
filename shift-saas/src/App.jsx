@@ -7,6 +7,7 @@ import { supabase } from './lib/supabase'
 import NotFound from './pages/NotFound'
 import Login from './pages/auth/Login'
 import Signup from './pages/auth/Signup'
+import AcceptInvite from './pages/auth/AcceptInvite'
 
 import ManagerLayout from './components/ManagerLayout'
 import EmployeeLayout from './components/EmployeeLayout'
@@ -86,9 +87,10 @@ export default function App() {
         <Routes>
           {/* Public */}
           <Route path="/"        element={<IndexRedirect />} />
-          <Route path="/login"   element={<Login />} />
-          <Route path="/signup"  element={<Signup />} />
-          <Route path="/404"     element={<NotFound />} />
+          <Route path="/login"          element={<Login />} />
+          <Route path="/signup"         element={<Signup />} />
+          <Route path="/invite/:token"  element={<AcceptInvite />} />
+          <Route path="/404"            element={<NotFound />} />
 
           {/* Tenant scope: /:orgId/* */}
           <Route
