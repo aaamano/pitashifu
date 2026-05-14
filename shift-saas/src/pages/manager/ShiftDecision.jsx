@@ -178,16 +178,28 @@ export default function ShiftDecision() {
   })
   const toggleDisplay = (k) => setDisplayItems(prev => ({ ...prev, [k]: !prev[k] }))
 
+  // Picker: 期間内の全日（半月単位）。常にこのリストをタブとして表示する
+  const pickerDays = useMemo(() => {
+    return daysConfig.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
+  }, [half])
+
+  // visibleDays: 集計対象の日（viewMode に応じて切替）
   const visibleDays = useMemo(() => {
     if (viewMode === 'day')   return daysConfig.filter(d => d.day === selectedDay)
     if (viewMode === 'week') {
-      const start = Math.max(1, selectedDay - 3)
-      const end   = Math.min(daysConfig.length, start + 6)
-      return daysConfig.filter(d => d.day >= start && d.day <= end)
+      const end = Math.min(daysConfig.length, selectedDay + 6)
+      return daysConfig.filter(d => d.day >= selectedDay && d.day <= end)
     }
-    if (viewMode === 'month' || viewMode === 'calendar') return daysConfig
-    return daysConfig.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
-  }, [viewMode, half, selectedDay])
+    if (viewMode === 'calendar') return daysConfig
+    // half: 期間内の全日
+    return pickerDays
+  }, [viewMode, half, selectedDay, pickerDays])
+
+  // 週モードで selectedDay が選べる範囲（期間末から6日以内まで）
+  const weekRangeForDay = (day) => {
+    const end = Math.min(daysConfig.length, day + 6)
+    return { start: day, end }
+  }
 
   const visibleSumm = useMemo(() => SUMM.filter(s => {
     if (['work','labor','overtime','lateNight','otLateNight'].includes(s.k)) return displayItems.workSummary
@@ -738,13 +750,10 @@ export default function ShiftDecision() {
             >
               ← バージョン一覧
             </button>
-            <span style={{ color:'#cbd5e1' }}>/</span>
-            <span>{YEAR_MONTH} 前半</span>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', margin:0, letterSpacing:'-0.01em' }}>
               シフト決定 — 時間帯人員配置
-              <span style={{ fontSize:14, fontWeight:600, color:'#6366f1', marginLeft:10 }}>「{currentVersion.name}」</span>
             </h1>
             <span style={{
               fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:10, whiteSpace:'nowrap',
@@ -772,27 +781,11 @@ export default function ShiftDecision() {
         </div>
       )}
 
-      {/* ── Period + View mode + Print ── */}
+      {/* ── View mode + Print ── */}
       <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:10 }}>
-        {/* Left: 期間 toggle (only meaningful for half view) */}
-        {viewMode === 'half' && (
-          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-            <span style={{ fontSize:12, color:'#64748b' }}>期間:</span>
-            {[{ k:'first', l:'前半 (1〜15日)' }, { k:'second', l:'後半 (16〜30日)' }].map(o => (
-              <button key={o.k} onClick={() => { setHalf(o.k); setSelectedDay(o.k === 'first' ? 1 : 16) }} style={{
-                padding:'5px 14px', borderRadius:18, fontSize:12, fontWeight: half === o.k ? 700 : 500,
-                background: half === o.k ? '#4f46e5' : '#f0f5f9',
-                color:      half === o.k ? 'white'   : '#475569',
-                border:'none', cursor:'pointer', fontFamily:'inherit',
-              }}>{o.l}</button>
-            ))}
-          </div>
-        )}
-        {viewMode !== 'half' && (
-          <div style={{ fontSize:12, color:'#64748b' }}>
-            表示: {viewMode === 'day' ? `${selectedDay}日のみ` : viewMode === 'week' ? `${selectedDay}日を含む7日間` : viewMode === 'month' ? '月全体 (30日)' : 'カレンダー'}
-          </div>
-        )}
+        <div style={{ fontSize:12, color:'#64748b' }}>
+          表示単位: {viewMode === 'day' ? `${selectedDay}日のみ` : viewMode === 'week' ? `${selectedDay}日から7日間` : viewMode === 'half' ? `${half === 'first' ? '前半 (1〜15日)' : `後半 (16〜${daysConfig.length}日)`}` : 'カレンダー'}
+        </div>
 
         {/* Right: View mode buttons + カレンダー + 印刷プレビュー */}
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
@@ -801,7 +794,6 @@ export default function ShiftDecision() {
               { k:'day',   l:'日' },
               { k:'week',  l:'週' },
               { k:'half',  l:'半月' },
-              { k:'month', l:'月' },
             ].map(o => (
               <button key={o.k} onClick={() => setViewMode(o.k)} style={{
                 padding:'5px 14px', fontSize:12, fontWeight: viewMode === o.k ? 700 : 500,
@@ -821,18 +813,41 @@ export default function ShiftDecision() {
         </div>
       </div>
 
-      {/* ── Day selector ── */}
+      {/* ── Day selector (期間内の全日。viewMode で意味が変わる) ── */}
       <div style={{ display:'flex', gap:4, overflowX:'auto', paddingBottom:2, }}>
-        {visibleDays.map(d => (
-          <button key={d.day} onClick={() => setSelectedDay(d.day)} style={{
-            flexShrink:0, width:44, padding:'5px 0', borderRadius:7, border:'none', cursor:'pointer',
-            fontSize:11, fontWeight:600, fontFamily:'inherit',
-            background: selectedDay === d.day ? '#4f46e5' : d.isWeekend ? '#fff1f2' : '#e8edf4',
-            color: selectedDay === d.day ? 'white' : d.isWeekend ? '#be123c' : '#64748b',
-          }}>
-            <div>{d.day}</div><div style={{ fontSize:9, fontWeight:400 }}>{d.dow}</div>
-          </button>
-        ))}
+        {pickerDays.map(d => {
+          // viewMode ごとに「選択中」を判定
+          let inRange = false
+          if (viewMode === 'day') {
+            inRange = d.day === selectedDay
+          } else if (viewMode === 'week') {
+            const { start, end } = weekRangeForDay(selectedDay)
+            inRange = d.day >= start && d.day <= end
+          } else if (viewMode === 'half') {
+            inRange = true  // 半月モードは全日が選択中
+          }
+          // 週モードでは「選択の起点」を別表示にしてマウス操作の意味を分かりやすく
+          const isAnchor = viewMode === 'week' && d.day === selectedDay
+          const clickable = viewMode !== 'half'
+          return (
+            <button key={d.day}
+              onClick={clickable ? () => setSelectedDay(d.day) : undefined}
+              style={{
+                flexShrink:0, width:44, padding:'5px 0', borderRadius:7,
+                border: isAnchor ? '2px solid #312e81' : 'none',
+                cursor: clickable ? 'pointer' : 'default',
+                fontSize:11, fontWeight:600, fontFamily:'inherit',
+                background: inRange
+                  ? (isAnchor ? '#312e81' : '#4f46e5')
+                  : (d.isWeekend ? '#fff1f2' : '#e8edf4'),
+                color: inRange
+                  ? 'white'
+                  : (d.isWeekend ? '#be123c' : '#64748b'),
+              }}>
+              <div>{d.day}</div><div style={{ fontSize:9, fontWeight:400 }}>{d.dow}</div>
+            </button>
+          )
+        })}
       </div>
 
       {/* ── 集約サマリー（週/半月/月） ── */}
@@ -947,11 +962,81 @@ export default function ShiftDecision() {
                     ))}
                     <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700 }}>—</td>
                   </tr>
+
+                  {/* スタッフ別の配置概要（期間の合計時間順） */}
+                  {(() => {
+                    // 期間内の各スタッフの合計時間を計算
+                    const rows = staff.map(s => {
+                      let totalHours = 0
+                      const perDay = {}
+                      for (const d of days) {
+                        const code = shiftData[s.id]?.[d.day - 1] || 'X'
+                        perDay[d.day] = code
+                        const t = parseShiftTimes(code)
+                        if (t) totalHours += Math.max(0, t.end - t.start - 1)
+                      }
+                      return { staff: s, totalHours, perDay }
+                    }).filter(r => r.totalHours > 0)
+                      .sort((a, b) => b.totalHours - a.totalHours)
+
+                    if (rows.length === 0) return null
+                    return (
+                      <>
+                        <tr>
+                          <td colSpan={summaries.length + 2}
+                            style={{ padding:'12px 8px 6px', fontSize:11, fontWeight:700, color:'#475569', background:'#FAFAFC', borderTop:'2px solid #cbd5e1' }}>
+                            スタッフ別シフト ({rows.length} 名)
+                          </td>
+                        </tr>
+                        {rows.map(({ staff: s, totalHours, perDay }) => (
+                          <tr key={s.id}>
+                            <td style={{ ...cellTd, textAlign:'left', fontWeight:600, color:'#0F172A', position:'sticky', left:0, background:'white' }}>
+                              {s.name}
+                              <span style={{ marginLeft:6, fontSize:10, color:'#94a3b8', fontWeight:500 }}>
+                                {totalHours.toFixed(1)}h
+                              </span>
+                            </td>
+                            {summaries.map(sum => {
+                              const code = perDay[sum.day] || 'X'
+                              const isOff = !code || code === 'X'
+                              const isFull = code === 'F'
+                              const isCloser = /-L$/.test(code) || /23$/.test(code)
+                              const bg = isOff ? '#F8FAFC'
+                                : isFull ? '#FEF3C7'
+                                : isCloser ? '#FED7AA'
+                                : '#E0E7FF'
+                              const color = isOff ? '#94A3B8' : '#0F172A'
+                              return (
+                                <td key={sum.day} style={{
+                                  ...cellTd, textAlign:'center', fontWeight:600,
+                                  background: bg, color, fontFamily:'monospace', fontSize:11,
+                                }}>
+                                  {isOff ? '×' : code}
+                                </td>
+                              )
+                            })}
+                            <td style={{ ...cellTd, background:'#e8edf4', fontWeight:700, textAlign:'right' }}>
+                              {totalHours.toFixed(1)}h
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )
+                  })()}
                 </tbody>
               </table>
             </div>
-            <div style={{ marginTop:10, fontSize:11, color:'#64748b' }}>
-              ⚠ <span style={{ color:'#B91C1C' }}>赤字</span>: 配置人員 &lt; 必要人員、または人件比率 35% 超過
+            <div style={{ marginTop:10, fontSize:11, color:'#64748b', display:'flex', gap:14, flexWrap:'wrap' }}>
+              <span>⚠ <span style={{ color:'#B91C1C' }}>赤字</span>: 配置人員 &lt; 必要人員、または人件比率 35% 超過</span>
+              <span style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ width:12, height:12, background:'#FEF3C7', borderRadius:2, display:'inline-block' }} /> F (フルタイム)
+              </span>
+              <span style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ width:12, height:12, background:'#FED7AA', borderRadius:2, display:'inline-block' }} /> 〜L (ラストまで)
+              </span>
+              <span style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ width:12, height:12, background:'#E0E7FF', borderRadius:2, display:'inline-block' }} /> 通常
+              </span>
             </div>
           </div>
         )
