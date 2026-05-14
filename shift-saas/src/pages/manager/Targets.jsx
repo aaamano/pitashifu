@@ -1,25 +1,30 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { dailyTargets, YEAR_MONTH, storeConfig, calcRequiredStaff, ORDER_DISTRIBUTION, SALES_PATTERNS } from '../../data/mockData'
+import { storeConfig, calcRequiredStaff, ORDER_DISTRIBUTION, SALES_PATTERNS } from '../../data/mockData'
 import { readWorkbookFromFile, extractSalesPatterns, matchPatternKey } from '../../utils/excelImport.js'
 import { useOrg } from '../../context/OrgContext'
 import { loadTargets, saveTargets } from '../../api/targets'
 import { loadSettings, saveSettings } from '../../api/orgSettings'
-
-const TARGET_YEAR  = 2026
-const TARGET_MONTH = 4
 
 const DEFAULT_LABOR_BAND = { min: 22, max: 32 } // %
 const LABOR_BAND_HARD_MAX = 50 // %  ゲージ最大値
 
 // 曜日インデックスを 0=日…6=土 で揃える
 const DOW_INDEX = { '日':0, '月':1, '火':2, '水':3, '木':4, '金':5, '土':6 }
+const DOW_JP = ['日','月','火','水','木','金','土']
 
-// daysConfigベースの初期スケルトン（値ゼロ） — mockData の flash を防ぐ
-function makeSkeleton() {
-  return dailyTargets.map(d => ({
-    ...d,
-    sales: 0, customers: 0, avgSpend: 0, orders: 0, laborCost: 0,
-  }))
+// 指定された年月の日別スケルトンを動的生成（値ゼロ）
+function makeSkeletonForMonth(year, month) {
+  const lastDay = new Date(year, month, 0).getDate()
+  return Array.from({ length: lastDay }, (_, i) => {
+    const day = i + 1
+    const dowIdx = new Date(year, month - 1, day).getDay()
+    return {
+      day,
+      dow: DOW_JP[dowIdx],
+      isWeekend: dowIdx === 0 || dowIdx === 6,
+      sales: 0, customers: 0, avgSpend: 0, orders: 0, laborCost: 0,
+    }
+  })
 }
 
 const PATTERN_HOURS = Array.from({ length: 14 }, (_, i) => i + 9) // 9-22
@@ -252,7 +257,20 @@ function initHourly(d) {
 export default function Targets() {
   const { stores } = useOrg()
   const storeId = stores[0]?.id
-  const [allTargets, setAllTargets] = useState(makeSkeleton)
+
+  // 月選択（今日の年月を初期値）
+  const today = new Date()
+  const [year,  setYear]  = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const yearMonthLabel = `${year}年${month}月`
+  const prevMonthNav = () => {
+    if (month === 1) { setYear(y => y - 1); setMonth(12) } else { setMonth(m => m - 1) }
+  }
+  const nextMonthNav = () => {
+    if (month === 12) { setYear(y => y + 1); setMonth(1) } else { setMonth(m => m + 1) }
+  }
+
+  const [allTargets, setAllTargets] = useState(() => makeSkeletonForMonth(today.getFullYear(), today.getMonth() + 1))
   const [saving, setSaving] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
@@ -262,18 +280,21 @@ export default function Targets() {
   useEffect(() => {
     if (!storeId) return
     let cancelled = false
-    const prevYear  = TARGET_MONTH === 1 ? TARGET_YEAR - 1 : TARGET_YEAR
-    const prevMonth = TARGET_MONTH === 1 ? 12 : TARGET_MONTH - 1
+    const prevYear  = month === 1 ? year - 1 : year
+    const prevMonth = month === 1 ? 12 : month - 1
+    // 月切替時はスケルトンを再生成してデータ重ね合わせ
+    const skeleton = makeSkeletonForMonth(year, month)
+    setAllTargets(skeleton)
     Promise.all([
-      loadTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH }),
-      loadTargets({ storeId, year: prevYear,   month: prevMonth }),
+      loadTargets({ storeId, year, month }),
+      loadTargets({ storeId, year: prevYear, month: prevMonth }),
       loadSettings(storeId),
     ])
       .then(([dbRows, prevRows, settings]) => {
         if (cancelled) return
         if (dbRows.length) {
           const byDay = Object.fromEntries(dbRows.map(r => [r.day, r]))
-          setAllTargets(prev => prev.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
+          setAllTargets(skeleton.map(d => byDay[d.day] ? { ...d, ...byDay[d.day] } : d))
         }
         setPrevMonthTargets(prevRows ?? [])
         if (settings?.salesPatterns) setPatterns(settings.salesPatterns)
@@ -286,7 +307,7 @@ export default function Targets() {
       })
       .catch(e => { if (!cancelled) setErrMsg(e.message || '読み込みに失敗しました') })
     return () => { cancelled = true }
-  }, [storeId])
+  }, [storeId, year, month])
   const [half, setHalf] = useState('first')   // 'first' | 'second'
   const targets = allTargets.filter(d => half === 'first' ? d.day <= 15 : d.day >= 16)
   const setTargets = (updater) => setAllTargets(prev => typeof updater === 'function' ? updater(prev) : updater)
@@ -310,7 +331,8 @@ export default function Targets() {
 
   const downloadCsvFormat = () => {
     const header = TARGET_HEADER_COLS.join(',')
-    const rows = dailyTargets.map(d => {
+    // 現在の入力済み値を含めてエクスポート（無入力の月は 0 が並ぶ）
+    const rows = allTargets.map(d => {
       const ratio = d.sales > 0 ? ((d.laborCost || 0) / d.sales * 100).toFixed(1) : ''
       const prod  = (d.laborCost || 0) > 0 ? Math.round(d.sales * AVG_WAGE / d.laborCost) : ''
       return [d.day, d.dow, d.sales, d.customers, d.avgSpend, d.orders, d.laborCost || 0, ratio, prod].join(',')
@@ -477,7 +499,7 @@ export default function Targets() {
     setSaving(true); setErrMsg('')
     try {
       // 1. 日別目標を保存
-      await saveTargets({ storeId, year: TARGET_YEAR, month: TARGET_MONTH, targets: allTargets })
+      await saveTargets({ storeId, year, month, targets: allTargets })
       // 2. 時間帯別売上パターンを settings JSONB にマージ保存
       const existing = (await loadSettings(storeId)) || {}
       await saveSettings(storeId, { ...existing, salesPatterns: patterns })
@@ -509,7 +531,7 @@ export default function Targets() {
     const sums = {}, counts = {}
     for (const r of prevMonthTargets) {
       const dowIdx = (() => {
-        const d = new Date(TARGET_YEAR, TARGET_MONTH - 2, r.day) // 前月
+        const d = new Date(year, month - 2, r.day) // 前月
         return d.getDay()
       })()
       sums[dowIdx]   = (sums[dowIdx]   || 0) + (r.sales || 0)
@@ -526,23 +548,41 @@ export default function Targets() {
     avgSpend:  { label: '客単価(円)', color: '#f59e0b', getValue: d => d.avgSpend },
   }
 
+  const halfLabel = half === 'first' ? '前半' : '後半'
+  const halfDays  = Math.max(1, targets.length)
   const kpiCards = [
-    { label: '前半 売上目標合計', value: `¥${totalSales.toLocaleString()}千`,  sub: `1日平均 ¥${Math.round(totalSales/15).toLocaleString()}千`, bg:'bg-blue-50',   border:'border-blue-100',   val:'text-blue-800',   sub2:'text-blue-400' },
-    { label: '前半 客数目標',     value: `${totalCust.toLocaleString()}名`,    sub: `1日平均 ${Math.round(totalCust/15)}名`,                   bg:'bg-emerald-50', border:'border-emerald-100', val:'text-emerald-800', sub2:'text-emerald-400' },
-    { label: '平均客単価',        value: `¥${avgSpend.toLocaleString()}`,      sub: `目標 ¥3,000`,                                             bg:'bg-amber-50',   border:'border-amber-100',   val:'text-amber-800',  sub2:'text-amber-400' },
-    { label: '注文数目標',        value: `${totalOrders.toLocaleString()}件`,  sub: `1日平均 ${Math.round(totalOrders/15)}件`,                  bg:'bg-violet-50',  border:'border-violet-100',  val:'text-violet-800', sub2:'text-violet-400' },
+    { label: `${halfLabel} 売上目標合計`, value: `¥${totalSales.toLocaleString()}千`,  sub: `1日平均 ¥${Math.round(totalSales/halfDays).toLocaleString()}千`, bg:'bg-blue-50',   border:'border-blue-100',   val:'text-blue-800',   sub2:'text-blue-400' },
+    { label: `${halfLabel} 客数目標`,     value: `${totalCust.toLocaleString()}名`,    sub: `1日平均 ${Math.round(totalCust/halfDays)}名`,                   bg:'bg-emerald-50', border:'border-emerald-100', val:'text-emerald-800', sub2:'text-emerald-400' },
+    { label: '平均客単価',                value: `¥${avgSpend.toLocaleString()}`,      sub: `目標 ¥3,000`,                                                   bg:'bg-amber-50',   border:'border-amber-100',   val:'text-amber-800',  sub2:'text-amber-400' },
+    { label: '注文数目標',                value: `${totalOrders.toLocaleString()}件`,  sub: `1日平均 ${Math.round(totalOrders/halfDays)}件`,                 bg:'bg-violet-50',  border:'border-violet-100',  val:'text-violet-800', sub2:'text-violet-400' },
   ]
+
+  // 後半の最終日（28〜31日のいずれか）— ラベル用
+  const lastDayOfMonth = allTargets.length || new Date(year, month, 0).getDate()
 
   return (
     <div className="mgr-page">
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12 }}>
+      {/* Header — タイトル + ダッシュボード上部と同じデザインの月選択 */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20, gap:12, flexWrap:'wrap' }}>
         <div>
-          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:4 }}>{YEAR_MONTH} {half === 'first' ? '前半 (1〜15日)' : '後半 (16〜30日)'}</div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#0f172a', letterSpacing:'-0.01em', margin:0 }}>目標計画</h1>
+          <div style={{ fontSize:14, color:'var(--pita-muted)', fontWeight:500 }}>目標計画</div>
           <p style={{ fontSize:12, color:'#64748b', marginTop:4, marginBottom:0 }}>日別売上・客数・客単価の目標を設定します</p>
-          <div style={{ display:'flex', gap:6, marginTop:10 }}>
-            {[{ k:'first', l:'前半 (1〜15日)' }, { k:'second', l:'後半 (16〜30日)' }].map(o => (
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flex:1, justifyContent:'center' }}>
+          <button onClick={prevMonthNav} aria-label="前月"
+            style={{ width:36, height:36, borderRadius:8, border:'1px solid var(--pita-border)', background:'white', fontSize:18, fontWeight:700, color:'#3730a3', cursor:'pointer', fontFamily:'inherit' }}>‹</button>
+          <div style={{ minWidth:180, textAlign:'center', fontSize:20, fontWeight:700, color:'var(--pita-text)', letterSpacing:'-0.01em' }}>
+            {yearMonthLabel}
+          </div>
+          <button onClick={nextMonthNav} aria-label="翌月"
+            style={{ width:36, height:36, borderRadius:8, border:'1px solid var(--pita-border)', background:'white', fontSize:18, fontWeight:700, color:'#3730a3', cursor:'pointer', fontFamily:'inherit' }}>›</button>
+        </div>
+        <div>
+          <div style={{ display:'flex', gap:6 }}>
+            {[
+              { k:'first',  l:`前半 (1〜15日)` },
+              { k:'second', l:`後半 (16〜${lastDayOfMonth}日)` },
+            ].map(o => (
               <button key={o.k} onClick={() => setHalf(o.k)} style={{
                 padding:'5px 14px', borderRadius:18, fontSize:12, fontWeight: half === o.k ? 700 : 500,
                 background: half === o.k ? '#4f46e5' : '#f0f5f9',
@@ -552,19 +592,8 @@ export default function Targets() {
             ))}
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
-          <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">
-            CSV アップロード
-          </button>
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
-            onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
-          <button onClick={handleSave} disabled={saving || !storeId} className="mgr-btn-primary">
-            {saving ? '保存中…' : saved ? '✓ 保存しました' : '保存する'}
-          </button>
-        </div>
         {errMsg && (
-          <div style={{ width:'100%', marginTop:10, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
+          <div style={{ width:'100%', marginTop:6, padding:'10px 14px', background:'#FEE2E2', color:'#991B1B', border:'1px solid #FECACA', borderRadius:8, fontSize:13 }}>
             {errMsg}
           </div>
         )}
@@ -650,9 +679,22 @@ export default function Targets() {
         </div>
       </div>
 
-      {/* CSV hint */}
-      <div style={{ marginBottom:16, fontSize:11.5, color:'#94a3b8', background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 16px', overflowX:'auto', whiteSpace:'nowrap' }}>
-        CSVフォーマット: <code style={{ background:'#f0f5f9', padding:'1px 5px', borderRadius:4, fontFamily:'monospace' }}>{TARGET_HEADER_COLS.join(',')}</code>
+      {/* アクションバー: CSV / 保存（編集テーブルの直上） */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, gap:8, flexWrap:'wrap' }}>
+        <div style={{ fontSize:11.5, color:'#94a3b8', background:'white', border:'1px solid #dde5f0', borderRadius:8, padding:'8px 16px', overflowX:'auto', whiteSpace:'nowrap', flex:1, minWidth:0 }}>
+          CSVフォーマット: <code style={{ background:'#f0f5f9', padding:'1px 5px', borderRadius:4, fontFamily:'monospace' }}>{TARGET_HEADER_COLS.join(',')}</code>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          {csvMsg && <span style={{ fontSize:12, color: csvMsg.startsWith('✓') ? '#10b981' : '#ef4444' }}>{csvMsg}</span>}
+          <button onClick={() => setShowCsvModal(true)} className="mgr-btn-secondary">
+            CSV アップロード
+          </button>
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+            onChange={e => { setPendingCsvFile(e.target.files?.[0] || null); e.target.value = '' }} />
+          <button onClick={handleSave} disabled={saving || !storeId} className="mgr-btn-primary">
+            {saving ? '保存中…' : saved ? '✓ 保存しました' : '保存する'}
+          </button>
+        </div>
       </div>
 
       {/* Editable table */}

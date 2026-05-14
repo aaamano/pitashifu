@@ -168,7 +168,6 @@ export default function Dashboard() {
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--pita-faint)', marginBottom: 4 }}>{STORE_NAME}</div>
           <div style={{ fontSize: 14, color: 'var(--pita-muted)', fontWeight: 500 }}>ダッシュボード</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'center' }}>
@@ -192,7 +191,7 @@ export default function Dashboard() {
 
       {/* View toggle */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#e8edf4', borderRadius: 10, padding: 4, width: 'fit-content' }}>
-        {[['A', '計画一覧 + バー'], ['B', 'ダッシュボード']].map(([key, label]) => (
+        {[['A', '計画一覧'], ['B', 'ダッシュボード']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
@@ -488,8 +487,8 @@ export default function Dashboard() {
       {/* ── View B ──────────────────────────────────────────────────────────── */}
       {view === 'B' && (
         <>
-          {/* KPI cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+          {/* KPI cards — 売上 hero + その他 secondary（目標計画と統一） */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
             {[
               { label: `${halfLabel} 売上目標合計`, value: `¥${totalMonth.toLocaleString()}千`, sub: '前年比 +3.2%',
                 bg: '#eef2ff', border: '#c7d2fe', txt: '#3730a3' },
@@ -500,27 +499,30 @@ export default function Dashboard() {
               { label: 'スタッフ数', value: `${staff.length}名`,
                 sub: `正社員${staff.filter(s => s.type === 'F').length}名 / P${staff.filter(s => s.type === 'P').length}名`,
                 bg: '#ede9fe', border: '#ddd6fe', txt: '#5b21b6' },
-            ].map((k, i) => (
-              <div key={i} style={{
-                background: k.bg,
-                border: `1px solid ${k.border}`,
-                borderRadius: 12,
-                padding: '16px 18px',
-                boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
-              }}>
-                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>{k.label}</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: k.txt, lineHeight: 1.2 }}>{k.value}</div>
-                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{k.sub}</div>
-              </div>
-            ))}
+            ].map((k, i) => {
+              const isHero = i === 0
+              return (
+                <div key={i} style={{
+                  background: k.bg,
+                  border: `1px solid ${k.border}`,
+                  borderRadius: 12,
+                  padding: isHero ? '20px 22px' : '14px 16px',
+                  boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+                }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: isHero ? 8 : 4 }}>{k.label}</div>
+                  <div style={{ fontSize: isHero ? 30 : 19, fontWeight: 800, color: k.txt, lineHeight: 1.15 }}>{k.value}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{k.sub}</div>
+                </div>
+              )
+            })}
           </div>
 
-          {/* Line chart */}
-          <div className="pita-panel" style={{ marginBottom: 16 }}>
-            <div className="pita-panel-head">
-              売上実績 vs 計画（前半 {ACTUAL_DAYS}日間）
-            </div>
-            <div style={{ padding: '16px 20px' }}>
+          {/* Line chart — モダンな mgr-card で表示 */}
+          <div className="mgr-card" style={{ padding: '20px 20px 14px', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', margin: '0 0 12px' }}>
+              売上実績 vs 計画 <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8', marginLeft: 4 }}>— 前半 {ACTUAL_DAYS}日間</span>
+            </h2>
+            <div style={{ padding: 0 }}>
               <svg viewBox="0 0 300 140" width="100%" style={{ maxWidth: 600, display: 'block' }}>
                 {/* Grid lines */}
                 {[0, 1, 2, 3, 4].map(i => (
