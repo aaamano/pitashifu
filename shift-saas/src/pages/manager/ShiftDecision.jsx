@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  staff as mockStaff, daysConfig, shiftData as mockShiftData, assignedShifts, YEAR_MONTH,
+  daysConfig, assignedShifts, YEAR_MONTH,
   storeConfig, staffConstraints, dailyTargets, ORDER_DISTRIBUTION,
   generateSlots, parseShiftTimes, calcRequiredStaff, skillLabels,
   decomposeShiftHours, calcDailyPay, SALES_PATTERNS, dayPatterns as initialDayPatterns,
@@ -133,7 +133,7 @@ export default function ShiftDecision() {
   const storeIdForSave = stores[0]?.id
   const [saveError, setSaveError] = useState('')
   const [dbEmployees, setDbEmployees] = useState([])
-  const currentVersion = shiftVersions.find(v => v.id === versionId) || { id: versionId, name: versionId || 'ver1', status: 'draft', author: '金子 光男' }
+  const currentVersion = shiftVersions.find(v => v.id === versionId) || { id: versionId, name: versionId || 'ver1', status: 'draft', author: '' }
 
   // DB社員をロード
   useEffect(() => {
@@ -144,11 +144,9 @@ export default function ShiftDecision() {
   const [assigned,     setAssigned]     = useState({}) // 初期は空。DBから loadAssignments で復元
   const [specialTasks, setSpecialTasks] = useState(storeConfig.specialTasks)
 
-  // DBに社員がいる場合はそれを使う。なければモックにフォールバック。
-  const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
-  // shiftData は staff × 日 ごとのコード配列。DB社員ならassignedから導出、モックならモックを使用。
+  // staff / shiftData は DB のみ（mockData の flash を防止）
+  const staff = dbEmployees
   const shiftData = useMemo(() => {
-    if (!dbEmployees.length) return mockShiftData
     const out = {}
     for (const emp of dbEmployees) {
       out[emp.id] = daysConfig.map(d => deriveDayCode(assigned?.[d.day], emp.id))

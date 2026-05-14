@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { storeConfig as initialConfig, YEAR_MONTH, skillLabels as initialSkillLabels, DEFAULT_STORE_ADDRESS } from '../../data/mockData'
+import { storeConfig as initialConfig, YEAR_MONTH } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadSettings, saveSettings } from '../../api/orgSettings'
 
@@ -63,14 +63,15 @@ export default function StoreSettings() {
   const { orgId, stores } = useOrg()
   const storeId = stores[0]?.id
 
-  const [config,    setConfig]    = useState(initialConfig)
-  const [address,   setAddress]   = useState(DEFAULT_STORE_ADDRESS)
+  // 初期 specialTasks は空（mockData の「搬入」「掃除」の flash 防止）
+  const [config,    setConfig]    = useState({ ...initialConfig, specialTasks: [] })
+  const [address,   setAddress]   = useState('')
   const [saved,     setSaved]     = useState(false)
   const [errMsg,    setErrMsg]    = useState('')
   const [saving,    setSaving]    = useState(false)
   const [editTask,  setEditTask]  = useState(null)
   const [taskForm,  setTaskForm]  = useState(null)
-  const [skills,    setSkills]    = useState(Object.entries(initialSkillLabels).map(([key, label]) => ({ key, label })))
+  const [skills,    setSkills]    = useState([])
   const [newSkill,  setNewSkill]  = useState({ key: '', label: '' })
   const [editSkill, setEditSkill] = useState(null)
   const [sukimaEnabled, setSukimaEnabled] = useState(true) // 会社レベル: スキマバイト機能のon/off

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
-  staff as mockStaff, shiftData as mockShiftData, daysConfig,
+  daysConfig,
   decomposeShiftHours, calcDailyPay, calcMonthlyPayroll, parseShiftTimes, PAYROLL,
 } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
@@ -96,9 +96,8 @@ export default function Payroll() {
     return () => { cancelled = true }
   }, [storeId, year, month])
 
-  const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
+  const staff = dbEmployees
   const shiftData = useMemo(() => {
-    if (!dbEmployees.length) return mockShiftData
     const out = {}
     for (const emp of dbEmployees) {
       out[emp.id] = daysConfig.map(d => deriveDayCode(dbAssigned?.[d.day], emp.id))

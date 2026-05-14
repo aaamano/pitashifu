@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { staff, shiftData, daysConfig, skillLabels, YEAR_MONTH } from '../../data/mockData'
+import { daysConfig, skillLabels, YEAR_MONTH } from '../../data/mockData'
+import { useOrg } from '../../context/OrgContext'
+import * as employeesApi from '../../api/employees'
 
 const getShiftColor = (code) => {
   if (!code || code === 'X') return 'bg-gray-100 text-gray-400'
@@ -11,7 +14,29 @@ const getShiftColor = (code) => {
 
 export default function MemberDetail() {
   const { id, orgId } = useParams()
-  const member = staff.find(s => s.id === Number(id))
+  const { orgId: ctxOrgId } = useOrg()
+  const [member, setMember] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const targetOrgId = ctxOrgId ?? orgId
+    if (!targetOrgId) return
+    let cancelled = false
+    setLoading(true)
+    employeesApi.listEmployees(targetOrgId)
+      .then(emps => { if (!cancelled) setMember((emps ?? []).find(s => String(s.id) === String(id)) ?? null) })
+      .catch(e => console.error('[MemberDetail.load]', e))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [ctxOrgId, orgId, id])
+
+  if (loading) {
+    return (
+      <div className="mgr-page" style={{ textAlign:'center', color:'#94a3b8', paddingTop:64 }}>
+        <div style={{ fontSize:14 }}>読み込み中…</div>
+      </div>
+    )
+  }
 
   if (!member) {
     return (
@@ -23,7 +48,7 @@ export default function MemberDetail() {
     )
   }
 
-  const row = shiftData[member.id] || []
+  const row = []
   const workDays = row.filter(c => c && c !== 'X').length
   const totalHours = row.reduce((sum, code) => {
     if (!code || code === 'X') return sum

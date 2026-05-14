@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { staff as mockStaff } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { useOrg } from '../../context/OrgContext'
 import { supabase } from '../../lib/supabase'
@@ -179,8 +178,8 @@ export default function Schedule({ base: baseProp, sukima = false }) {
     return () => { cancelled = true }
   }, [me, year, month, daysConfig.length])
 
-  // DBから取れていない時のフォールバック（未ログインや読み込み中）
-  const meDisp = me ?? (meLoading ? null : mockStaff[0])
+  // DB から me が取れなければ null（mockData の flash を防止）
+  const meDisp = me
   const myShiftsDisp = myShifts.length === daysConfig.length ? myShifts : daysConfig.map(() => 'X')
 
   if (!meDisp) {

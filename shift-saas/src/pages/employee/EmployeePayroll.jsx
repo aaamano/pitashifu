@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff as mockStaff, shiftData as mockShiftData, daysConfig, STORE_NAME, YEAR_MONTH } from '../../data/mockData'
+import { STORE_NAME } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { useOrg } from '../../context/OrgContext'
 import { useMe } from '../../hooks/useMe'
@@ -88,7 +88,7 @@ export default function EmployeePayroll({ base: baseProp, sukima = false }) {
   const { stores } = useOrg()
   const storeId = stores[0]?.id
   const { me } = useMe()
-  const meDisp = me ?? mockStaff[0]
+  const meDisp = me
 
   // 月選択
   const today = new Date()
@@ -122,7 +122,7 @@ export default function EmployeePayroll({ base: baseProp, sukima = false }) {
   const myShiftsDisp = myShifts.length ? myShifts : Array(lastDayOfMonth).fill('X')
   const workDays  = myShiftsDisp.filter(c => c && c !== 'X').length
   const workHours = myShiftsDisp.reduce((s, c) => s + shiftHours(c), 0)
-  const estPay    = workHours * (meDisp.wage ?? 1050)
+  const estPay    = workHours * (meDisp?.wage ?? 1050)
 
   const [activeTab,   setActiveTab]   = useState('month')
   const [goal,        setGoal]        = useState(loadGoal)

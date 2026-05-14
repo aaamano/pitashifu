@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { staff as mockStaff, shiftData as mockShiftData, dailyTargets as mockDailyTargets, STORE_NAME, decomposeShiftHours, calcDailyPay } from '../../data/mockData'
+import { STORE_NAME, decomposeShiftHours, calcDailyPay } from '../../data/mockData'
 import { useOrg } from '../../context/OrgContext'
 import { loadTargets } from '../../api/targets'
 import * as employeesApi from '../../api/employees'
@@ -121,10 +121,9 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [storeId, year, month, half])
 
-  // staff / shiftData を派生 (DBがあればDB優先、なければモック)
-  const staff = useMemo(() => (dbEmployees.length ? dbEmployees : mockStaff), [dbEmployees])
+  // staff / shiftData は DB 由来のみ（mockData の flash を防止）
+  const staff = dbEmployees
   const shiftData = useMemo(() => {
-    if (!dbEmployees.length) return mockShiftData
     const out = {}
     for (const emp of dbEmployees) {
       out[emp.id] = daysConfig.map(d => deriveDayCode(dbAssigned?.[d.day], emp.id))

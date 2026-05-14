@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
-import { employeeNotifications } from '../data/mockData'
+import { listNotifications } from '../api/notifications'
 
-const UNREAD = employeeNotifications.filter(n => !n.read).length
 const C    = '#4F46E5'
 const GRAY = '#9CA3AF'
 
@@ -63,6 +63,15 @@ export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
   const settingsSukima = storeSettings?.sukimaEnabled ?? companySettings?.sukimaEnabled
   const sukima = sukimaProp ?? (settingsSukima !== false)
 
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    listNotifications()
+      .then(rows => { if (!cancelled) setUnread((rows ?? []).filter(n => !n.read).length) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   const getActive = () => {
     if (pathname.includes('/submit'))        return 'submit'
     if (pathname.includes('/payroll'))       return 'payroll'
@@ -89,7 +98,7 @@ export default function EmployeeTabBar({ base: baseProp, sukima: sukimaProp }) {
     }}>
       {tabs.map(({ id, to, label, Icon }) => {
         const on = active === id
-        const hasUnread = id === 'notifications' && UNREAD > 0
+        const hasUnread = id === 'notifications' && unread > 0
         return (
           <Link key={id} to={to} style={{
             flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
