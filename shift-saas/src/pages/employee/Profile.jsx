@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { skillLabels } from '../../data/mockData'
 import EmployeeTabBar from '../../components/EmployeeTabBar'
 import { useMe } from '../../hooks/useMe'
@@ -165,6 +165,19 @@ export default function Profile({ base: baseProp, sukima = false }) {
                 {skillLabels[s] || s}
               </span>
             ))}
+          </div>
+        </div>
+
+        {/* ビュー情報 — マネージャー権限を持つ人にはマネージャービューへの切替リンクも */}
+        <div style={{ background: 'white', marginTop: 10, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.04em' }}>ビュー</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px 14px' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#3730A3', background: '#EEF0FE', padding: '3px 10px', borderRadius: 10 }}>スタッフビュー</span>
+            {me && ['owner', 'admin', 'manager'].includes(me.role) && (
+              <Link to={`/${orgId}/manager`} style={{ fontSize: 12, color: INDIGO, textDecoration: 'none', fontWeight: 600, marginLeft: 'auto' }}>
+                ↩ マネージャービューに戻る
+              </Link>
+            )}
           </div>
         </div>
 
